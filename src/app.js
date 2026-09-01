@@ -66,19 +66,6 @@ function currentLessons() {
   return state.sheets[state.current] || [];
 }
 
-// ISO 8601 week number — нечётная (1) / чётная (2).
-// Старая логика "первое вхождение = неделя 1" ломалась, если в данных только один
-// комплект пар на сетку. Теперь определяем текущую неделю по реальной дате.
-function getISOWeek(date = new Date()) {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-}
-
-const currentWeek = () => (getISOWeek() % 2 === 0 ? '2' : '1');
-
 function applyFilters(lessons, filters) {
   let out = lessons;
   if (filters.day) out = out.filter((it) => it.day === filters.day);
@@ -91,7 +78,9 @@ function applyFilters(lessons, filters) {
     );
   }
   if (filters.week) {
-    out = out.filter((it) => (it.week || '1') === filters.week);
+    // Если у записи week === null (файл без маркировки недель) — показываем всегда,
+    // независимо от выбранной недели. Иначе фильтр «1» или «2» обнулил бы всё.
+    out = out.filter((it) => it.week == null || it.week === filters.week);
   }
   return out;
 }
@@ -390,8 +379,10 @@ function bindEvents() {
 }
 
 function init() {
-  // По умолчанию показываем неделю, которая идёт сейчас.
-  els.weekFilter.value = currentWeek();
+  // Дефолт фильтра недели = "Обе" (не знаем, какая сейчас «текущая» в колледже —
+  // семестр может начинаться с любой). Если данные содержат маркеры недель,
+  // пользователь сам выберет «1-ю» или «2-ю».
+  els.weekFilter.value = '';
   if (Object.keys(state.sheets).length) {
     refreshControls();
   }

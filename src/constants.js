@@ -36,7 +36,7 @@ export const TYPE_LABELS = Object.freeze({
 
 export const STORAGE_KEY = 'schedule:v1';
 export const CACHE_NAME = 'schedule-pwa-v4';
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';
 
 export const MAX_HEADER_SCAN_ROWS = 30;
 export const MAX_DAY_LOOKAHEAD = 80;

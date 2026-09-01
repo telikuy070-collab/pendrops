@@ -129,14 +129,19 @@ export function parseSheetRows(rows) {
             type: parsed.type,
             teacher: parsed.teacher,
             room: parsed.room,
-            // Неделя не выделена в исходной сетке — все записи по умолчанию
-            // относятся к нечётной неделе. Маркер «II неделя» / «2-я неделя» в
-            // строке поднимет запись в чётную.
-            week: detectWeek(raw)
+            // Неделя вычисляется из маркера «II неделя» и т.п. в ячейке.
+            week: detectWeek(part)
           });
         }
       }
     }
+  }
+
+  // Если в файле нет ни одной записи с week='2' — сбрасываем метки в null.
+  // Иначе фильтр недели, выставленный в '1' или '2', будет показывать не всё.
+  const hasWeek2 = lessons.some((l) => l.week === '2');
+  if (!hasWeek2) {
+    for (const l of lessons) l.week = null;
   }
   return lessons;
 }
