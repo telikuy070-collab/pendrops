@@ -126,14 +126,6 @@
     </div>
   </div>
 
-  <script src="xlsx.full.min.js"></script>
   <script type="module" src="src/app.js"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').catch(console.error);
-      });
-    }
-  </script>
 </body>
 </html>

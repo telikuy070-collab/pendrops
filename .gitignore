@@ -1,0 +1,8 @@
+node_modules/
+tests/
+*.xls
+*.xlsx
+*.log
+.DS_Store
+package-lock.json
+Thumbs.db
