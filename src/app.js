@@ -1,13 +1,19 @@
 import { parseWorkbook } from './sheet.js';
-import { loadState, saveState } from './store.js';
+import { loadState, saveState, saveHandle, loadHandle } from './store.js';
 import { createScheduleView } from './view/scheduleView.js';
 import { createToast } from './view/toast.js';
 import { escapeHtml, debounce } from './text.js';
 import { DAY_ORDER } from './constants.js';
 import { getTodayName } from './timing.js';
+import { pickExcelFile, hasNativeFilePicker } from './picker.js';
+
+const LAST_HANDLE = 'lastFile';
 
 const els = {
   fileInput: /** @type {HTMLInputElement} */ (document.getElementById('fileInput')),
+  findFileBtn: document.getElementById('findFileBtn'),
+  findFileBtnModal: document.getElementById('findFileBtnModal'),
+  openSettingsBtn: document.getElementById('openSettingsBtn'),
   settingsBtn: document.getElementById('settingsBtn'),
   reloadBtn: document.getElementById('reloadBtn'),
   installBtn: document.getElementById('installBtn'),
@@ -251,9 +257,60 @@ function loadXLSX() {
   return xlsxPromise;
 }
 
+/**
+ * Открывает нативный диалог выбора Excel-файла на устройстве
+ * (File System Access API) или fallback на <input type=file>.
+ * Запоминает handle в IDB, чтобы в следующий раз открыть одной кнопкой.
+ */
+async function openFinder() {
+  try {
+    const picked = await pickExcelFile();
+    if (!picked || !picked.length) return; // cancelled
+    const f = picked[0];
+    if (f.handle) {
+      await saveHandle(LAST_HANDLE, f.handle);
+    }
+    await handleFile(f.file, f.name);
+  } catch (err) {
+    console.error(err);
+    toast.show('Не удалось открыть файл: ' + (err instanceof Error ? err.message : String(err)), 'bad');
+  }
+}
+
+/**
+ * Пытается открыть последний использованный файл через сохранённый handle
+ * (без диалога выбора). Если handle нет / битый / файл перемещён — возвращает false.
+ * @returns {Promise<boolean>}
+ */
+async function tryOpenLastHandle() {
+  const handle = await loadHandle(LAST_HANDLE);
+  if (!handle || typeof handle.getFile !== 'function') return false;
+  try {
+    // Проверяем разрешение перед чтением (могло истечь после закрытия PWA)
+    if (handle.queryPermission) {
+      const q = await handle.queryPermission({ mode: 'read' });
+      if (q !== 'granted') {
+        const r = await handle.requestPermission({ mode: 'read' });
+        if (r !== 'granted') return false;
+      }
+    }
+    const file = await handle.getFile();
+    await handleFile(file, file.name);
+    return true;
+  } catch (err) {
+    console.warn('Last handle invalid:', err);
+    return false;
+  }
+}
+
 // --- File handling ---
-async function handleFile(file) {
+/**
+ * @param {File} file
+ * @param {string} [nameOverride] — если уже получили имя из handle
+ */
+async function handleFile(file, nameOverride) {
   if (!file) return;
+  const name = nameOverride || file.name;
   try {
     const buf = await file.arrayBuffer();
     const XLSX = await loadXLSX();
@@ -268,7 +325,7 @@ async function handleFile(file) {
     state.current = wb.SheetNames[0];
     state.group = '';
     state.loadedAt = Date.now();
-    state.fileName = file.name;
+    state.fileName = name;
     // Восстанавливаем отделение и группу, если они есть в новом файле
     if (prevSheet && state.sheets[prevSheet]) state.current = prevSheet;
     if (prevGroup) {
@@ -277,9 +334,12 @@ async function handleFile(file) {
     }
     await persist();
     refreshControls();
-    toast.show(`Загружено: ${total} пар`, 'ok', { label: 'Обновить', onClick: () => els.fileInput.click() });
+    toast.show(`Загружено: ${total} пар`, 'ok', {
+      label: 'Найти другой',
+      onClick: () => openFinder()
+    });
     closeModal(els.settingsModal);
-    if (els.fileHint) els.fileHint.textContent = `Загружено: ${file.name} · ${formatTime(state.loadedAt)}`;
+    if (els.fileHint) els.fileHint.textContent = `Загружено: ${name} · ${formatTime(state.loadedAt)}`;
   } catch (err) {
     console.error(err);
     toast.show('Ошибка чтения: ' + (err instanceof Error ? err.message : String(err)), 'bad');
@@ -289,7 +349,17 @@ async function handleFile(file) {
 function bindEvents() {
   els.fileInput.addEventListener('change', (e) => {
     const f = /** @type {HTMLInputElement} */ (e.target).files?.[0];
-    handleFile(f);
+    if (f) handleFile(f);
+  });
+
+  // Кнопки «Найти на устройстве» (на пустом экране + в настройках)
+  if (els.findFileBtn) els.findFileBtn.addEventListener('click', openFinder);
+  if (els.findFileBtnModal) els.findFileBtnModal.addEventListener('click', () => {
+    closeModal(els.settingsModal);
+    openFinder();
+  });
+  if (els.openSettingsBtn) els.openSettingsBtn.addEventListener('click', () => {
+    if (els.settingsModal) openModal(els.settingsModal);
   });
 
   // Drag & drop в любом месте страницы.
@@ -337,8 +407,14 @@ function bindEvents() {
   els.settingsModal.querySelector('.modal-backdrop').addEventListener('click', () => closeModal(els.settingsModal));
   document.getElementById('closeModal').addEventListener('click', () => closeModal(els.settingsModal));
 
-  // Quick reload (открывает диалог выбора файла)
-  els.reloadBtn.addEventListener('click', () => els.fileInput.click());
+  // Quick reload: нативный диалог выбора файла (с фильтром по .xls/.xlsx)
+  els.reloadBtn.addEventListener('click', openFinder);
+  // Если handle сохранён и permission granted — Reload откроет его без диалога.
+  els.reloadBtn.addEventListener('contextmenu', async (e) => {
+    e.preventDefault();
+    const ok = await tryOpenLastHandle();
+    if (!ok) openFinder();
+  });
 
   // Sheet / Group pickers
   els.sheetBtn.addEventListener('click', showSheetPicker);
@@ -374,6 +450,8 @@ function init() {
   initBrandConfetti();
   initServiceWorker();
   initInstallPrompt();
+  // Если файл уже загружен, но handle сохранён — кнопка 🔄 покажет «Открыть заново».
+  // На пустом экране ничего не делаем.
 }
 
 function initBrandConfetti() {

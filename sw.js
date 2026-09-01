@@ -1,5 +1,5 @@
-const CACHE = 'schedule-pwa-v12';
-const RUNTIME_CACHE = 'schedule-runtime-v12';
+const CACHE = 'schedule-pwa-v13';
+const RUNTIME_CACHE = 'schedule-runtime-v13';
 const ASSETS = [
   './',
   './index.html',
@@ -13,6 +13,7 @@ const ASSETS = [
   './src/timing.js',
   './src/text.js',
   './src/store.js',
+  './src/picker.js',
   './src/constants.js',
   './src/view/scheduleView.js',
   './src/view/toast.js',

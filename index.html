@@ -55,7 +55,15 @@
     <div class="empty">
       <div class="empty-illu">💧</div>
       <h2>PenDrops ждёт файл</h2>
-      <p>Откройте ⚙ и загрузите Excel с расписанием — или просто перетащите его сюда.</p>
+      <p>Найдите Excel с расписанием на устройстве или перетащите файл сюда.</p>
+      <div class="empty-actions">
+        <button id="findFileBtn" class="btn primary">
+          <span>🔍</span> Найти на устройстве
+        </button>
+        <button id="openSettingsBtn" class="btn ghost">
+          <span>📂</span> Из другой папки
+        </button>
+      </div>
     </div>
   </main>
 
@@ -72,8 +80,11 @@
 
       <div class="modal-section">
         <h3>Файл расписания</h3>
-        <label class="btn primary block" for="fileInput">
-          <span>📂 Загрузить Excel</span>
+        <button id="findFileBtnModal" class="btn primary block">
+          <span>🔍</span> Найти Excel на устройстве
+        </button>
+        <label class="btn ghost block" for="fileInput" style="margin-top: 8px;">
+          <span>📂</span> Из другой папки
           <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" hidden />
         </label>
         <div class="modal-hint" id="fileHint">Файл не загружен</div>
