@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PenDrops</title>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #000; color: #fff; min-height: 100vh;
+      display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .loader { text-align: center; }
+    .spinner { width: 48px; height: 48px; border: 4px solid rgba(255,255,255,.2);
+      border-top-color: #a78bfa; border-radius: 50%;
+      animation: spin 1s linear infinite; margin: 0 auto 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    p { opacity: .7; font-size: 14px; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="loader">
+    <div class="spinner"></div>
+    <p>Открываем файл в PenDrops…</p>
+  </div>
+  <script>
+    (async () => {
+      try {
+        // Service Worker перехватил POST и положил файл в Cache API.
+        // Достаём его, кладём в IDB и редиректим в основное приложение.
+        const cache = await caches.open('shared-files');
+        const responses = await cache.matchAll('/__shared__');
+        if (!responses.length) {
+          // Нет файла — возможно пользователь открыл страницу напрямую
+          location.replace('./index.html');
+          return;
+        }
+        const res = responses[0];
+        const blob = await res.blob();
+        const name = res.headers.get('X-File-Name') || 'shared.xls';
+        // Сохраняем в IDB с фиксированным ключом — index.html прочитает
+        const idb = await new Promise((resolve, reject) => {
+          const r = indexedDB.open('pendrops-store', 3);
+          r.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles');
+            if (!db.objectStoreNames.contains('state')) db.createObjectStore('state');
+            if (!db.objectStoreNames.contains('shared')) db.createObjectStore('shared');
+          };
+          r.onsuccess = () => resolve(r.result);
+          r.onerror = () => reject(r.error);
+        });
+        await new Promise((resolve, reject) => {
+          const tx = idb.transaction('shared', 'readwrite');
+          tx.objectStore('shared').put(blob, name);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+        });
+        await cache.delete('/__shared__');
+        location.replace('./index.html?shared=' + encodeURIComponent(name));
+      } catch (err) {
+        console.error(err);
+        location.replace('./index.html');
+      }
+    })();
+  </script>
+</body>
+</html>

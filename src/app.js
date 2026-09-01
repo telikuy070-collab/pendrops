@@ -39,6 +39,42 @@ const state = await loadState();
 const view = createScheduleView(document.getElementById('scheduleContainer'));
 const toast = createToast(document.getElementById('toast'));
 
+/**
+ * Если приложение открыто через Android Share Sheet (?shared=1) — загружаем
+ * файл из IDB (его положил share-handler.html) и сразу парсим.
+ */
+async function consumeSharedFile() {
+  const params = new URLSearchParams(location.search);
+  if (!params.has('shared')) return;
+  const name = params.get('shared') || 'shared.xls';
+  // Чистим URL, чтобы при reload не пытался снова
+  history.replaceState(null, '', location.pathname);
+  try {
+    const idb = await new Promise((resolve, reject) => {
+      const r = indexedDB.open('pendrops-store', 3);
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+    const blob = await new Promise((resolve, reject) => {
+      const tx = idb.transaction('shared', 'readonly');
+      const req = tx.objectStore('shared').get(name);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    if (!blob) {
+      toast.show('Не удалось загрузить общий файл', 'bad');
+      return;
+    }
+    const file = new File([blob], name, { type: blob.type || 'application/vnd.ms-excel' });
+    await handleFile(file, name);
+    // Чистим IDB, чтобы при следующем открытии не наткнуться на старый файл
+    idb.transaction('shared', 'readwrite').objectStore('shared').delete(name);
+  } catch (err) {
+    console.error(err);
+    toast.show('Ошибка чтения: ' + (err.message || String(err)), 'bad');
+  }
+}
+
 /** @type {string} */
 let activeSubgroup = '';
 
@@ -450,8 +486,8 @@ function init() {
   initBrandConfetti();
   initServiceWorker();
   initInstallPrompt();
-  // Если файл уже загружен, но handle сохранён — кнопка 🔄 покажет «Открыть заново».
-  // На пустом экране ничего не делаем.
+  // Если открыто через Android Share — забираем файл из IDB.
+  consumeSharedFile();
 }
 
 function initBrandConfetti() {
