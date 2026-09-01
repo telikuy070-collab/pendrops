@@ -4,11 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0f172a" />
-  <meta name="description" content="Расписание мед. колледжа — PWA" />
+  <meta name="description" content="PenDrops — расписание мед. колледжа из Excel. Работает офлайн." />
   <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="PenDrops" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="format-detection" content="telephone=no" />
-  <title>Расписание — PWA</title>
+  <title>PenDrops — Расписание</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
@@ -17,13 +19,13 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo">📅</span>
-      <h1>Расписание<small>мед. колледж</small></h1>
+      <span class="logo">💧</span>
+      <h1>PenDrops<small>расписание мед. колледжа</small></h1>
     </div>
     <div class="actions">
+      <button id="installBtn" class="btn ghost hidden" title="Установить как приложение" aria-label="Установить PWA">📲</button>
       <button id="reloadBtn" class="btn ghost hidden" title="Загрузить новый файл" aria-label="Обновить расписание">🔄</button>
       <button id="settingsBtn" class="btn ghost" aria-label="Настройки">⚙</button>
-      <button id="demoBtn" class="btn ghost" title="Демо">Демо</button>
     </div>
   </header>
 
@@ -51,9 +53,9 @@
 
   <main id="scheduleContainer" class="schedule">
     <div class="empty">
-      <div class="empty-illu">🗓️</div>
-      <h2>Расписание пока пустое</h2>
-      <p>Откройте ⚙ и загрузите Excel-файл — или просто перетащите его сюда.</p>
+      <div class="empty-illu">💧</div>
+      <h2>PenDrops ждёт файл</h2>
+      <p>Откройте ⚙ и загрузите Excel с расписанием — или просто перетащите его сюда.</p>
     </div>
   </main>
 

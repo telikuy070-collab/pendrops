@@ -8,9 +8,9 @@ import { getTodayName } from './timing.js';
 
 const els = {
   fileInput: /** @type {HTMLInputElement} */ (document.getElementById('fileInput')),
-  demoBtn: document.getElementById('demoBtn'),
   settingsBtn: document.getElementById('settingsBtn'),
   reloadBtn: document.getElementById('reloadBtn'),
+  installBtn: document.getElementById('installBtn'),
   quickPick: document.getElementById('quickPick'),
   sheetBtn: document.getElementById('sheetBtn'),
   groupBtn: document.getElementById('groupBtn'),
@@ -49,14 +49,6 @@ async function persist() {
   }
   return where;
 }
-
-const demoData = () => ({
-  'Демо': [
-    { day: 'Понедельник', time: '09:00-10:50', para: '1', group: 'СЖ-1-25', subgroup: '1', subject: 'Анатомия', type: 'tp-lecture', teacher: 'Иванов И.И.', room: '№7 корпус 315' },
-    { day: 'Понедельник', time: '11:40-13:00', para: '3', group: 'СЖ-1-25', subgroup: '1', subject: 'Фармакология', type: 'tp-practice', teacher: 'Петров П.П.', room: '№7 корп. 365' },
-    { day: 'Вторник', time: '09:30-10:50', para: '2', group: 'СЖ-1-25', subgroup: '2', subject: 'Английский', type: 'tp-practice', teacher: 'Сидоров С.', room: '№7 корп. 312' }
-  ]
-});
 
 /** Форматирует timestamp в "пн, 1 сен 14:30" — коротко и понятно. */
 function formatTime(ts) {
@@ -332,16 +324,6 @@ function bindEvents() {
   // dragend срабатывает, если пользователь отменил drop (отпустил вне окна)
   document.addEventListener('dragend', resetDrag);
 
-  els.demoBtn.addEventListener('click', async () => {
-    state.sheets = demoData();
-    state.current = 'Демо';
-    state.group = 'СЖ-1-25';
-    await persist();
-    refreshControls();
-    toast.show('Демо-данные загружены', 'ok');
-    closeModal(els.settingsModal);
-  });
-
   // Settings modal
   els.settingsBtn.addEventListener('click', () => {
     if (els.fileHint && Object.keys(state.sheets).length) {
@@ -391,6 +373,7 @@ function init() {
   bindEvents();
   initBrandConfetti();
   initServiceWorker();
+  initInstallPrompt();
 }
 
 function initBrandConfetti() {
@@ -451,6 +434,77 @@ function initServiceWorker() {
     reloading = true;
     window.location.reload();
   });
+}
+
+/**
+ * PWA install prompt.
+ * Браузер (Chrome/Edge/Samsung) генерирует событие `beforeinstallprompt` когда
+ * приложение соответствует критериям. Сохраняем его и предлагаем пользователю
+ * установить через кнопку 📲 и/или автоматически через 30 секунд.
+ */
+function initInstallPrompt() {
+  const DISMISS_KEY = 'pendrops-install-dismissed';
+  const DISMISS_DAYS = 7;
+  // Если пользователь уже отклонил — не показываем неделю.
+  const dismissed = (() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(DISMISS_KEY) || 'null');
+      if (!v) return false;
+      return Date.now() - v < DISMISS_DAYS * 24 * 60 * 60 * 1000;
+    } catch { return false; }
+  })();
+  if (dismissed) return;
+
+  // Уже установлено — не показываем.
+  if (window.matchMedia('(display-mode: standalone)').matches) return;
+  if (/** @type {any} */ (navigator).standalone === true) return;
+
+  let deferredPrompt = null;
+  let promptShown = false;
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (els.installBtn) els.installBtn.classList.remove('hidden');
+  });
+
+  window.addEventListener('appinstalled', () => {
+    if (els.installBtn) els.installBtn.classList.add('hidden');
+    toast.show('PenDrops установлено!', 'ok');
+  });
+
+  // Кнопка в topbar
+  if (els.installBtn) {
+    els.installBtn.addEventListener('click', async () => {
+      if (!deferredPrompt) {
+        // Браузер не дал prompt — направляем в меню «Добавить на главный экран».
+        toast.show('Откройте меню браузера → «Добавить на главный экран»', 'ok');
+        return;
+      }
+      deferredPrompt.prompt();
+      try {
+        const choice = await deferredPrompt.userChoice;
+        if (choice.outcome === 'accepted') {
+          els.installBtn.classList.add('hidden');
+        } else {
+          localStorage.setItem(DISMISS_KEY, JSON.stringify(Date.now()));
+        }
+      } catch {}
+      deferredPrompt = null;
+    });
+  }
+
+  // Автоматический toast-подсказка через 30 сек, если пользователь ещё не отреагировал.
+  setTimeout(() => {
+    if (!deferredPrompt || promptShown) return;
+    if (els.installBtn && !els.installBtn.classList.contains('hidden')) {
+      promptShown = true;
+      toast.show('Установите PenDrops как приложение', 'ok', {
+        label: 'Установить',
+        onClick: () => els.installBtn.click()
+      });
+    }
+  }, 30000);
 }
 
 init();
