@@ -431,6 +431,20 @@ body::before, body::after { display: none; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.bad { border-color: rgba(253, 164, 175, .6); background: rgba(253, 164, 175, .15); }
 .toast.ok  { border-color: rgba(110, 231, 183, .6); background: rgba(110, 231, 183, .15); }
+.toast-btn {
+  margin-left: 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: rgba(255,255,255,.1);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .2s;
+}
+.toast-btn:hover { background: rgba(255,255,255,.2); }
 
 /* Mobile: day carousel + pill tabs */
 @media (max-width: 768px) {

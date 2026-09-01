@@ -20,7 +20,6 @@ const els = {
   subgroupChips: document.getElementById('subgroupChips'),
   searchInput: /** @type {HTMLInputElement} */ (document.getElementById('searchInput')),
   dayFilter: /** @type {HTMLSelectElement} */ (document.getElementById('dayFilter')),
-  weekFilter: /** @type {HTMLSelectElement} */ (document.getElementById('weekFilter')),
   resetBtn: document.getElementById('resetBtn'),
   settingsModal: document.getElementById('settingsModal'),
   sheetModal: document.getElementById('sheetModal'),
@@ -59,6 +58,17 @@ const demoData = () => ({
   ]
 });
 
+/** Форматирует timestamp в "пн, 1 сен 14:30" — коротко и понятно. */
+function formatTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const days = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+  const months = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${hh}:${mm}`;
+}
+
 const uniqueSorted = (arr) =>
   Array.from(new Set(arr.filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'ru'));
 
@@ -77,11 +87,6 @@ function applyFilters(lessons, filters) {
       `${it.day} ${it.time} ${it.group} ${it.subject} ${it.teacher} ${it.room}`.toLowerCase().includes(q)
     );
   }
-  if (filters.week) {
-    // Если у записи week === null (файл без маркировки недель) — показываем всегда,
-    // независимо от выбранной недели. Иначе фильтр «1» или «2» обнулил бы всё.
-    out = out.filter((it) => it.week == null || it.week === filters.week);
-  }
   return out;
 }
 
@@ -93,7 +98,6 @@ function readFilters() {
     day: els.dayFilter.value,
     group: state.group,
     subgroup: activeSubgroup,
-    week: els.weekFilter.value,
     search: els.searchInput.value.trim().toLowerCase()
   };
 }
@@ -271,6 +275,8 @@ async function handleFile(file) {
     state.sheets = sheets;
     state.current = wb.SheetNames[0];
     state.group = '';
+    state.loadedAt = Date.now();
+    state.fileName = file.name;
     // Восстанавливаем отделение и группу, если они есть в новом файле
     if (prevSheet && state.sheets[prevSheet]) state.current = prevSheet;
     if (prevGroup) {
@@ -279,9 +285,9 @@ async function handleFile(file) {
     }
     await persist();
     refreshControls();
-    toast.show(`Загружено: ${wb.SheetNames.length} листов, ${total} записей`, 'ok');
+    toast.show(`Загружено: ${total} пар`, 'ok', { label: 'Обновить', onClick: () => els.fileInput.click() });
     closeModal(els.settingsModal);
-    if (els.fileHint) els.fileHint.textContent = `Загружено: ${file.name}`;
+    if (els.fileHint) els.fileHint.textContent = `Загружено: ${file.name} · ${formatTime(state.loadedAt)}`;
   } catch (err) {
     console.error(err);
     toast.show('Ошибка чтения: ' + (err instanceof Error ? err.message : String(err)), 'bad');
@@ -339,7 +345,8 @@ function bindEvents() {
   // Settings modal
   els.settingsBtn.addEventListener('click', () => {
     if (els.fileHint && Object.keys(state.sheets).length) {
-      els.fileHint.textContent = `Загружено: ${Object.keys(state.sheets).join(', ')}`;
+      const stamp = state.loadedAt ? ` · обновлено ${formatTime(state.loadedAt)}` : '';
+      els.fileHint.textContent = `Загружено: ${state.fileName || 'файл'}${stamp}`;
     } else if (els.fileHint) {
       els.fileHint.textContent = 'Файл не загружен';
     }
@@ -369,20 +376,15 @@ function bindEvents() {
   });
 
   // Advanced filters
-  [els.searchInput, els.dayFilter, els.weekFilter].forEach((el) => el.addEventListener('input', render));
+  [els.searchInput, els.dayFilter].forEach((el) => el.addEventListener('input', render));
   els.resetBtn.addEventListener('click', () => {
     els.searchInput.value = '';
     els.dayFilter.value = '';
-    els.weekFilter.value = '';
     render();
   });
 }
 
 function init() {
-  // Дефолт фильтра недели = "Обе" (не знаем, какая сейчас «текущая» в колледже —
-  // семестр может начинаться с любой). Если данные содержат маркеры недель,
-  // пользователь сам выберет «1-ю» или «2-ю».
-  els.weekFilter.value = '';
   if (Object.keys(state.sheets).length) {
     refreshControls();
   }

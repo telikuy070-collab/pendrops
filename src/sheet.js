@@ -18,16 +18,6 @@ const cellAt = (rows, r, c) => {
   return c >= 0 && c < row.length ? norm(row[c]) : '';
 };
 
-const WEEK2_MARK_RE = /(?:^|[\s.,;:(])(2|ii|вторая|чётн\w*|четн\w*|жұп)\s*(?:нед|неделя|жұма)/i;
-const WEEK1_MARK_RE = /(?:^|[\s.,;:(])(1|i|первая|нечётн\w*|нечетн\w*|тақ)\s*(?:нед|неделя|жұма)/i;
-
-function detectWeek(raw) {
-  if (!raw) return '1';
-  if (WEEK2_MARK_RE.test(raw)) return '2';
-  if (WEEK1_MARK_RE.test(raw)) return '1';
-  return '1';
-}
-
 function findHeaderRows(rows) {
   const out = [];
   const limit = Math.min(rows.length, MAX_HEADER_SCAN_ROWS);
@@ -128,20 +118,11 @@ export function parseSheetRows(rows) {
             subject: parsed.subject,
             type: parsed.type,
             teacher: parsed.teacher,
-            room: parsed.room,
-            // Неделя вычисляется из маркера «II неделя» и т.п. в ячейке.
-            week: detectWeek(part)
+            room: parsed.room
           });
         }
       }
     }
-  }
-
-  // Если в файле нет ни одной записи с week='2' — сбрасываем метки в null.
-  // Иначе фильтр недели, выставленный в '1' или '2', будет показывать не всё.
-  const hasWeek2 = lessons.some((l) => l.week === '2');
-  if (!hasWeek2) {
-    for (const l of lessons) l.week = null;
   }
   return lessons;
 }

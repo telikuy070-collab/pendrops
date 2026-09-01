@@ -2,8 +2,9 @@ import { STORAGE_KEY } from './constants.js';
 
 /**
  * @typedef {{ day: string, time: string, para: string, group: string, subgroup: string,
- *             subject: string, type: string, teacher: string, room: string, week?: string }} Lesson
- * @typedef {{ sheets: Record<string, Lesson[]>, current: string, group: string }} WorkbookState
+ *             subject: string, type: string, teacher: string, room: string }} Lesson
+ * @typedef {{ sheets: Record<string, Lesson[]>, current: string, group: string,
+ *             fileName?: string, loadedAt?: number }} WorkbookState
  */
 
 const IDB_NAME = 'pendrops-store';
@@ -107,7 +108,9 @@ function validateState(parsed) {
   return {
     sheets: parsed.sheets,
     current: parsed.current || Object.keys(parsed.sheets)[0] || '',
-    group: parsed.group || ''
+    group: parsed.group || '',
+    fileName: parsed.fileName || '',
+    loadedAt: parsed.loadedAt || 0
   };
 }
 
