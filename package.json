@@ -1,0 +1,18 @@
+{
+  "name": "pendrops-schedule",
+  "version": "1.0.0",
+  "description": "PWA-приложение для отображения расписания мед. колледжа из Excel",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "python -m http.server 8080",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  }
+}

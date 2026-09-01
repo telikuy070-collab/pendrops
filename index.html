@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="description" content="Расписание мед. колледжа — PWA" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="format-detection" content="telephone=no" />
+  <title>Расписание — PWA</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">📅</span>
+      <h1>Расписание<small>мед. колледж</small></h1>
+    </div>
+    <div class="actions">
+      <button id="reloadBtn" class="btn ghost hidden" title="Загрузить новый файл" aria-label="Обновить расписание">🔄</button>
+      <button id="settingsBtn" class="btn ghost" aria-label="Настройки">⚙</button>
+      <button id="demoBtn" class="btn ghost" title="Демо">Демо</button>
+    </div>
+  </header>
+
+  <section id="quickPick" class="quick-pick hidden">
+    <div class="qp-row">
+      <button id="sheetBtn" class="qp-btn">
+        <span class="qp-label">Отделение</span>
+        <span class="qp-value" id="sheetValue">—</span>
+      </button>
+      <button id="groupBtn" class="qp-btn">
+        <span class="qp-label">Группа</span>
+        <span class="qp-value" id="groupValue">—</span>
+      </button>
+    </div>
+    <div class="chips-row" id="subgroupChipsRow" hidden>
+      <span class="chips-label">Подгруппа:</span>
+      <div class="chips" id="subgroupChips">
+        <button type="button" class="chip-btn active" data-value="">Все</button>
+        <button type="button" class="chip-btn" data-value="1">1-я</button>
+        <button type="button" class="chip-btn" data-value="2">2-я</button>
+        <button type="button" class="chip-btn" data-value="3">3-я</button>
+      </div>
+    </div>
+  </section>
+
+  <main id="scheduleContainer" class="schedule">
+    <div class="empty">
+      <div class="empty-illu">🗓️</div>
+      <h2>Расписание пока пустое</h2>
+      <p>Откройте ⚙ и загрузите Excel-файл — или просто перетащите его сюда.</p>
+    </div>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- Settings modal -->
+  <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modalTitle">Настройки</h2>
+        <button class="modal-close" id="closeModal" aria-label="Закрыть">✕</button>
+      </div>
+
+      <div class="modal-section">
+        <h3>Файл расписания</h3>
+        <label class="btn primary block" for="fileInput">
+          <span>📂 Загрузить Excel</span>
+          <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" hidden />
+        </label>
+        <div class="modal-hint" id="fileHint">Файл не загружен</div>
+      </div>
+
+      <details class="more-filters" id="advancedFilters" open>
+        <summary>Дополнительные фильтры</summary>
+        <div class="secondary-row">
+          <div class="field">
+            <label>День</label>
+            <select id="dayFilter"><option value="">Все</option></select>
+          </div>
+          <div class="field">
+            <label>Неделя</label>
+            <select id="weekFilter">
+              <option value="">Обе</option>
+              <option value="1">1-я</option>
+              <option value="2">2-я</option>
+            </select>
+          </div>
+          <div class="field field-grow">
+            <label>Поиск</label>
+            <input id="searchInput" type="search" placeholder="Предмет, преподаватель..." />
+          </div>
+          <button id="resetBtn" class="btn ghost">Сброс</button>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <!-- Sheet picker modal -->
+  <div id="sheetModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Выберите отделение</h2>
+        <button class="modal-close" data-close="sheet" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="picker-list" id="sheetList"></div>
+    </div>
+  </div>
+
+  <!-- Group picker modal -->
+  <div id="groupModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Выберите группу</h2>
+        <button class="modal-close" data-close="group" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="picker-list" id="groupList"></div>
+    </div>
+  </div>
+
+  <script src="xlsx.full.min.js"></script>
+  <script type="module" src="src/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(console.error);
+      });
+    }
+  </script>
+</body>
+</html>
