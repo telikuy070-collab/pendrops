@@ -9,6 +9,7 @@ import { createAdminView } from './view/adminView.js';
 
 const REMOTE_SCHEDULE_URL = './data/schedule.xls';
 const REMOTE_VERSION_URL = './data/version.json';
+const LOAD_TIMEOUT_MS = 15000; // 15 сек максимум на загрузку
 
 const els = {
   settingsBtn: document.getElementById('settingsBtn'),
@@ -30,7 +31,8 @@ const els = {
   groupList: document.getElementById('groupList'),
   loadingState: document.getElementById('loadingState'),
   scheduleInfo: document.getElementById('scheduleInfo'),
-  scheduleInfoText: document.getElementById('scheduleInfoText')
+  scheduleInfoText: document.getElementById('scheduleInfoText'),
+  scheduleContainer: document.getElementById('scheduleContainer')
 };
 
 const state = await loadState();
@@ -42,19 +44,10 @@ const admin = createAdminView();
 let activeSubgroup = '';
 
 async function persist() {
-  const where = await saveState(state);
-  if (where === 'none') toast.show('Не удалось сохранить — изменения только в памяти', 'bad');
-  return where;
-}
-
-function formatTime(ts) {
-  if (!ts) return '';
-  const d = new Date(ts);
-  const days = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
-  const months = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${hh}:${mm}`;
+  try {
+    const where = await saveState(state);
+    if (where === 'none') toast.show('Не удалось сохранить — изменения только в памяти', 'bad');
+  } catch (e) { /* молча */ }
 }
 
 function formatDateLong(ts) {
@@ -166,13 +159,13 @@ function updateScheduleInfo() {
     return;
   }
   els.scheduleInfo.hidden = false;
-  const v = state.remoteVersion ? ` · ${state.remoteVersion}` : '';
+  const v = state.remoteVersion || '';
   const d = state.remoteUpdated ? formatDateLong(state.remoteUpdated) : '';
-  els.scheduleInfoText.textContent = `Версия ${v.replace(' · ', '')} · обновлено ${d}`.trim();
+  els.scheduleInfoText.textContent = `${v} · обновлено ${d}`.trim();
 }
 
-function openModal(modal) { modal.classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
-function closeModal(modal) { modal.classList.add('hidden'); document.body.style.overflow = ''; }
+function openModal(modal) { if (modal) { modal.classList.remove('hidden'); document.body.style.overflow = 'hidden'; } }
+function closeModal(modal) { if (modal) { modal.classList.add('hidden'); document.body.style.overflow = ''; } }
 
 function showSheetPicker() {
   const names = Object.keys(state.sheets);
@@ -232,34 +225,115 @@ function loadXLSX() {
   return xlsxPromise;
 }
 
-async function loadRemoteSchedule() {
+function showErrorState(message) {
+  // Скрываем loading, показываем ошибку
+  if (els.loadingState) els.loadingState.classList.add('hidden');
+  if (els.scheduleContainer) {
+    els.scheduleContainer.innerHTML = `
+      <div class="empty">
+        <div class="empty-illu">📡</div>
+        <h2>${escapeHtml(message)}</h2>
+        <p>Проверьте подключение к интернету и откройте приложение снова.</p>
+      </div>
+    `;
+  }
+}
+
+function hideLoadingShowEmpty() {
+  if (els.loadingState) els.loadingState.classList.add('hidden');
+  if (els.scheduleContainer) {
+    els.scheduleContainer.innerHTML = `
+      <div class="empty">
+        <div class="empty-illu">💧</div>
+        <h2>Расписание пустое</h2>
+        <p>Админ скоро загрузит новое расписание.</p>
+      </div>
+    `;
+  }
+}
+
+/** Загружает xlsx скрипт с таймаутом, иначе кэшированный через cache-first SW. */
+async function loadXLSXWithTimeout() {
   try {
-    const res = await fetch(REMOTE_SCHEDULE_URL + '?t=' + Date.now(), { cache: 'no-store' });
+    return await Promise.race([
+      loadXLSX(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('xlsx timeout')), LOAD_TIMEOUT_MS))
+    ]);
+  } catch (e) {
+    console.warn('xlsx load:', e);
+    return null;
+  }
+}
+
+async function loadRemoteSchedule() {
+  // Сначала пробуем кеш (если уже загружали раньше — мгновенно)
+  try {
+    const cache = await caches.open('remote-schedule-v1');
+    const cachedRes = await cache.match(REMOTE_SCHEDULE_URL);
+    if (cachedRes) {
+      const buf = await cachedRes.arrayBuffer();
+      const XLSX = await loadXLSXWithTimeout();
+      if (XLSX) {
+        try {
+          const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+          const sheets = parseWorkbook(wb, XLSX);
+          const total = Object.values(sheets).reduce((s, a) => s + a.length, 0);
+          if (total) {
+            applySheets(sheets, wb.SheetNames[0]);
+            return true;
+          }
+        } catch (e) { console.warn('cache parse failed:', e); }
+      }
+    }
+  } catch {}
+
+  // Иначе тянем из сети
+  try {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
+    const res = await fetch(REMOTE_SCHEDULE_URL + '?t=' + Date.now(), {
+      cache: 'no-store',
+      signal: controller.signal
+    });
+    clearTimeout(t);
     if (!res.ok) return false;
     const buf = await res.arrayBuffer();
-    const XLSX = await loadXLSX();
+    const XLSX = await loadXLSXWithTimeout();
+    if (!XLSX) return false;
     const wb = XLSX.read(buf, { type: 'array', cellDates: true });
     const sheets = parseWorkbook(wb, XLSX);
     const total = Object.values(sheets).reduce((s, a) => s + a.length, 0);
     if (!total) return false;
-    const prevSheet = state.current;
-    const prevGroup = state.group;
-    state.sheets = sheets;
-    state.current = wb.SheetNames[0];
-    state.group = '';
-    state.fileName = 'schedule.xls';
-    state.source = 'remote';
-    if (prevSheet && state.sheets[prevSheet]) state.current = prevSheet;
-    if (prevGroup) {
-      const newGroups = new Set((state.sheets[state.current] || []).map((l) => l.group));
-      if (newGroups.has(prevGroup)) state.group = prevGroup;
-    }
-    await persist();
+    applySheets(sheets, wb.SheetNames[0]);
+    // Положим в кеш
+    try {
+      const cache = await caches.open('remote-schedule-v1');
+      await cache.put(REMOTE_SCHEDULE_URL, new Response(buf.slice(0), {
+        status: 200,
+        headers: { 'Content-Type': 'application/vnd.ms-excel' }
+      }));
+    } catch {}
     return true;
   } catch (err) {
-    console.warn('loadRemoteSchedule error:', err);
+    console.warn('loadRemoteSchedule network:', err);
     return false;
   }
+}
+
+function applySheets(sheets, firstName) {
+  const prevSheet = state.current;
+  const prevGroup = state.group;
+  state.sheets = sheets;
+  state.current = firstName;
+  state.group = '';
+  state.fileName = 'schedule.xls';
+  state.source = 'remote';
+  if (prevSheet && state.sheets[prevSheet]) state.current = prevSheet;
+  if (prevGroup) {
+    const newGroups = new Set((state.sheets[state.current] || []).map((l) => l.group));
+    if (newGroups.has(prevGroup)) state.group = prevGroup;
+  }
+  persist();
 }
 
 async function fetchRemoteVersion() {
@@ -286,7 +360,7 @@ function showUpdateBanner(version) {
   setTimeout(() => b.remove(), 8000);
 }
 
-async function checkForUpdates() {
+async function checkForUpdates(silent) {
   const v = await fetchRemoteVersion();
   if (!v || !v.updated) return;
   const localStamp = state.remoteUpdated || '';
@@ -297,36 +371,43 @@ async function checkForUpdates() {
     state.remoteVersion = v.version;
     await persist();
     refreshControls();
-    showUpdateBanner(v.version);
+    if (!silent) showUpdateBanner(v.version);
   }
 }
 
 function bindEvents() {
-  els.settingsBtn.addEventListener('click', () => openModal(els.settingsModal));
-  els.settingsModal.querySelector('.modal-backdrop').addEventListener('click', () => closeModal(els.settingsModal));
-  document.getElementById('closeModal').addEventListener('click', () => closeModal(els.settingsModal));
-
-  els.sheetBtn.addEventListener('click', showSheetPicker);
-  els.groupBtn.addEventListener('click', showGroupPicker);
-  els.sheetModal.querySelector('.modal-backdrop').addEventListener('click', () => closeModal(els.sheetModal));
-  els.groupModal.querySelector('.modal-backdrop').addEventListener('click', () => closeModal(els.groupModal));
-  els.sheetModal.querySelector('[data-close="sheet"]').addEventListener('click', () => closeModal(els.sheetModal));
-  els.groupModal.querySelector('[data-close="group"]').addEventListener('click', () => closeModal(els.groupModal));
-
-  els.subgroupChips.addEventListener('click', (e) => {
-    const btn = /** @type {HTMLElement} */ (e.target).closest('.chip-btn');
-    if (!btn || btn.hidden) return;
-    activeSubgroup = btn.dataset.value || '';
-    updateChipsActive();
-    render();
-  });
-
-  [els.searchInput, els.dayFilter].forEach((el) => el.addEventListener('input', render));
-  els.resetBtn.addEventListener('click', () => {
-    els.searchInput.value = '';
-    els.dayFilter.value = '';
-    render();
-  });
+  if (els.settingsBtn) els.settingsBtn.addEventListener('click', () => openModal(els.settingsModal));
+  if (els.settingsModal) {
+    els.settingsModal.querySelector('.modal-backdrop')?.addEventListener('click', () => closeModal(els.settingsModal));
+    document.getElementById('closeModal')?.addEventListener('click', () => closeModal(els.settingsModal));
+  }
+  if (els.sheetBtn) els.sheetBtn.addEventListener('click', showSheetPicker);
+  if (els.groupBtn) els.groupBtn.addEventListener('click', showGroupPicker);
+  if (els.sheetModal) {
+    els.sheetModal.querySelector('.modal-backdrop')?.addEventListener('click', () => closeModal(els.sheetModal));
+    els.sheetModal.querySelector('[data-close="sheet"]')?.addEventListener('click', () => closeModal(els.sheetModal));
+  }
+  if (els.groupModal) {
+    els.groupModal.querySelector('.modal-backdrop')?.addEventListener('click', () => closeModal(els.groupModal));
+    els.groupModal.querySelector('[data-close="group"]')?.addEventListener('click', () => closeModal(els.groupModal));
+  }
+  if (els.subgroupChips) {
+    els.subgroupChips.addEventListener('click', (e) => {
+      const btn = /** @type {HTMLElement} */ (e.target).closest('.chip-btn');
+      if (!btn || btn.hidden) return;
+      activeSubgroup = btn.dataset.value || '';
+      updateChipsActive();
+      render();
+    });
+  }
+  [els.searchInput, els.dayFilter].forEach((el) => el && el.addEventListener('input', render));
+  if (els.resetBtn) {
+    els.resetBtn.addEventListener('click', () => {
+      els.searchInput.value = '';
+      els.dayFilter.value = '';
+      render();
+    });
+  }
 }
 
 function init() {
@@ -338,27 +419,32 @@ function init() {
 }
 
 function initRemoteSync() {
+  // СРАЗУ показываем что есть в state (если загружено раньше)
+  if (Object.keys(state.sheets).length) {
+    if (els.loadingState) els.loadingState.classList.add('hidden');
+    refreshControls();
+  }
+
+  // Параллельно качаем с сервера
   (async () => {
     const ok = await loadRemoteSchedule();
     if (ok) {
+      if (els.loadingState) els.loadingState.classList.add('hidden');
       const v = await fetchRemoteVersion();
       if (v) {
         state.remoteUpdated = v.updated;
         state.remoteVersion = v.version;
         await persist();
       }
-      els.loadingState.classList.add('hidden');
       refreshControls();
-    } else {
-      // Remote недоступен — показываем "расписание недоступно"
-      els.loadingState.innerHTML = `
-        <div class="empty-illu">📡</div>
-        <h2>Расписание недоступно</h2>
-        <p>Проверьте подключение к интернету и откройте приложение снова.</p>
-      `;
+    } else if (!Object.keys(state.sheets).length) {
+      // Никаких данных нигде — показать ошибку
+      showErrorState('Расписание недоступно');
     }
+    // Если state был и обновить не вышло — оставляем как есть (оффлайн)
   })();
-  setInterval(checkForUpdates, 6 * 60 * 60 * 1000);
+
+  setInterval(() => checkForUpdates(true), 6 * 60 * 60 * 1000);
 }
 
 function initBrandGesture() {
@@ -397,7 +483,6 @@ function initBrandGesture() {
   brand.addEventListener('pointerleave', cancel);
   brand.addEventListener('pointercancel', cancel);
 
-  // Конфетти на 3 быстрых тапа
   let clickCount = 0;
   let resetTimer = null;
   brand.addEventListener('click', () => {
@@ -434,11 +519,17 @@ function fireConfetti(count = 50) {
 
 function initServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').then((reg) => {
-      setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
-    }).catch(console.error);
-  });
+  // Регистрация ПОСЛЕ полной загрузки страницы (не блокирует render).
+  if (document.readyState === 'complete') {
+    registerSW();
+  } else {
+    window.addEventListener('load', registerSW);
+  }
+}
+function registerSW() {
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
+  }).catch(console.error);
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (reloading) return;
