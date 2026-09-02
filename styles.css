@@ -88,6 +88,32 @@ body::before, body::after { display: none; }
 }
 .brand h1 small { color: var(--muted); font-weight: 500; font-size: 11px; display: block; margin-top: -2px; }
 
+.longpress-hint {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  background: rgba(20, 20, 40, 0.95);
+  border: 1px solid var(--violet);
+  color: #fff;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+  animation: hintPulse 1.5s ease-in-out infinite;
+  white-space: nowrap;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(167, 139, 250, 0.4);
+}
+.brand { position: relative; }
+@keyframes hintPulse {
+  0%, 100% { opacity: 0.85; transform: translateX(-50%) scale(1); }
+  50%      { opacity: 1;    transform: translateX(-50%) scale(1.05); }
+}
+
 .actions { display: flex; gap: 8px; }
 
 .btn {

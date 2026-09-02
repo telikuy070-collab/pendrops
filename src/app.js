@@ -480,8 +480,7 @@ function bindEvents() {
 
 function init() {
   bindEvents();
-  initBrandSecretAdmin();
-  initBrandConfetti();
+  initBrandGesture();
   initServiceWorker();
   initInstallPrompt();
   initRemoteSync();
@@ -516,24 +515,49 @@ function initRemoteSync() {
   setInterval(() => checkForUpdates(false), 6 * 60 * 60 * 1000);
 }
 
-function initBrandSecretAdmin() {
+function initBrandGesture() {
   const brand = document.querySelector('.brand');
   if (!brand) return;
-  let clicks = [];
-  brand.addEventListener('click', () => {
-    const now = Date.now();
-    clicks = clicks.filter((t) => now - t < 3000);
-    clicks.push(now);
-    if (clicks.length >= 10) {
-      clicks = [];
-      admin.show();
-    }
-  });
-}
 
-function initBrandConfetti() {
-  const brand = document.querySelector('.brand');
-  if (!brand) return;
+  // Контекстная подсказка: при долгом нажатии показываем "Админка"
+  let pressTimer = null;
+  let pressing = false;
+  let hint = null;
+  const LONG_PRESS_MS = 1500;
+
+  const showHint = () => {
+    if (hint) return;
+    hint = document.createElement('div');
+    hint.className = 'longpress-hint';
+    hint.textContent = 'Админка';
+    brand.appendChild(hint);
+  };
+  const hideHint = () => { if (hint) { hint.remove(); hint = null; } };
+
+  brand.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    pressing = true;
+    showHint();
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      if (pressing) {
+        pressing = false;
+        hideHint();
+        admin.show();
+        if (navigator.vibrate) navigator.vibrate(30);
+      }
+    }, LONG_PRESS_MS);
+  });
+  const cancel = () => {
+    pressing = false;
+    clearTimeout(pressTimer);
+    hideHint();
+  };
+  brand.addEventListener('pointerup', cancel);
+  brand.addEventListener('pointerleave', cancel);
+  brand.addEventListener('pointercancel', cancel);
+
+  // Конфетти на 3 быстрых тапа (только короткие клики, не длинные)
   let clickCount = 0;
   let resetTimer = null;
   brand.addEventListener('click', () => {
