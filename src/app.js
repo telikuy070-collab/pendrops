@@ -9,7 +9,7 @@ import { createAdminView } from './view/adminView.js';
 
 const REMOTE_SCHEDULE_URL = './data/schedule.xls';
 const REMOTE_VERSION_URL = './data/version.json';
-const LOAD_TIMEOUT_MS = 15000; // 15 сек максимум на загрузку
+const LOAD_TIMEOUT_MS = 15000;
 
 const els = {
   settingsBtn: document.getElementById('settingsBtn'),
@@ -47,7 +47,7 @@ async function persist() {
   try {
     const where = await saveState(state);
     if (where === 'none') toast.show('Не удалось сохранить — изменения только в памяти', 'bad');
-  } catch (e) { /* молча */ }
+  } catch (e) { /* silent */ }
 }
 
 function formatDateLong(ts) {
@@ -90,6 +90,8 @@ function readFilters() {
 const render = debounce(() => {
   const filtered = applyFilters(currentLessons(), readFilters());
   view.render(filtered, { today: getTodayName() });
+  // После render — перезапускаем live-таймер, чтобы он подхватил новые DOM-узлы
+  view.start();
 }, 50);
 
 function updateQuickPick() {
@@ -226,7 +228,6 @@ function loadXLSX() {
 }
 
 function showErrorState(message) {
-  // Скрываем loading, показываем ошибку
   if (els.loadingState) els.loadingState.classList.add('hidden');
   if (els.scheduleContainer) {
     els.scheduleContainer.innerHTML = `
@@ -239,34 +240,17 @@ function showErrorState(message) {
   }
 }
 
-function hideLoadingShowEmpty() {
-  if (els.loadingState) els.loadingState.classList.add('hidden');
-  if (els.scheduleContainer) {
-    els.scheduleContainer.innerHTML = `
-      <div class="empty">
-        <div class="empty-illu">💧</div>
-        <h2>Расписание пустое</h2>
-        <p>Админ скоро загрузит новое расписание.</p>
-      </div>
-    `;
-  }
-}
-
-/** Загружает xlsx скрипт с таймаутом, иначе кэшированный через cache-first SW. */
 async function loadXLSXWithTimeout() {
   try {
     return await Promise.race([
       loadXLSX(),
       new Promise((_, reject) => setTimeout(() => reject(new Error('xlsx timeout')), LOAD_TIMEOUT_MS))
     ]);
-  } catch (e) {
-    console.warn('xlsx load:', e);
-    return null;
-  }
+  } catch (e) { return null; }
 }
 
 async function loadRemoteSchedule() {
-  // Сначала пробуем кеш (если уже загружали раньше — мгновенно)
+  // Сначала пробуем кеш (мгновенно если уже качали)
   try {
     const cache = await caches.open('remote-schedule-v1');
     const cachedRes = await cache.match(REMOTE_SCHEDULE_URL);
@@ -282,12 +266,12 @@ async function loadRemoteSchedule() {
             applySheets(sheets, wb.SheetNames[0]);
             return true;
           }
-        } catch (e) { console.warn('cache parse failed:', e); }
+        } catch (e) {}
       }
     }
   } catch {}
 
-  // Иначе тянем из сети
+  // Иначе из сети
   try {
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
@@ -305,7 +289,6 @@ async function loadRemoteSchedule() {
     const total = Object.values(sheets).reduce((s, a) => s + a.length, 0);
     if (!total) return false;
     applySheets(sheets, wb.SheetNames[0]);
-    // Положим в кеш
     try {
       const cache = await caches.open('remote-schedule-v1');
       await cache.put(REMOTE_SCHEDULE_URL, new Response(buf.slice(0), {
@@ -314,10 +297,7 @@ async function loadRemoteSchedule() {
       }));
     } catch {}
     return true;
-  } catch (err) {
-    console.warn('loadRemoteSchedule network:', err);
-    return false;
-  }
+  } catch (err) { return false; }
 }
 
 function applySheets(sheets, firstName) {
@@ -375,6 +355,21 @@ async function checkForUpdates(silent) {
   }
 }
 
+/** Pull-to-refresh handler. */
+async function handlePullRefresh() {
+  toast.show('Проверяю обновления...', 'ok');
+  await checkForUpdates(false);
+  const ok = await loadRemoteSchedule();
+  if (ok) {
+    state.remoteUpdated = new Date().toISOString();
+    await persist();
+    refreshControls();
+    toast.show('Расписание обновлено', 'ok');
+  } else {
+    toast.show('Обновлений нет', 'ok');
+  }
+}
+
 function bindEvents() {
   if (els.settingsBtn) els.settingsBtn.addEventListener('click', () => openModal(els.settingsModal));
   if (els.settingsModal) {
@@ -412,6 +407,7 @@ function bindEvents() {
 
 function init() {
   bindEvents();
+  view.setOnRefresh(handlePullRefresh);
   initBrandGesture();
   initServiceWorker();
   initInstallPrompt();
@@ -419,13 +415,11 @@ function init() {
 }
 
 function initRemoteSync() {
-  // СРАЗУ показываем что есть в state (если загружено раньше)
   if (Object.keys(state.sheets).length) {
     if (els.loadingState) els.loadingState.classList.add('hidden');
     refreshControls();
   }
 
-  // Параллельно качаем с сервера
   (async () => {
     const ok = await loadRemoteSchedule();
     if (ok) {
@@ -438,10 +432,8 @@ function initRemoteSync() {
       }
       refreshControls();
     } else if (!Object.keys(state.sheets).length) {
-      // Никаких данных нигде — показать ошибку
       showErrorState('Расписание недоступно');
     }
-    // Если state был и обновить не вышло — оставляем как есть (оффлайн)
   })();
 
   setInterval(() => checkForUpdates(true), 6 * 60 * 60 * 1000);
@@ -519,7 +511,6 @@ function fireConfetti(count = 50) {
 
 function initServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
-  // Регистрация ПОСЛЕ полной загрузки страницы (не блокирует render).
   if (document.readyState === 'complete') {
     registerSW();
   } else {

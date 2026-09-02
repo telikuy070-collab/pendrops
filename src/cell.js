@@ -33,10 +33,23 @@ const SUBJECT_TRIM_RE = new RegExp(
 const KURATOR_RE = /куратордук|куратор/i;
 const NUMBER_RE = /^\d+$/;
 
+/**
+ * Detects exam/control work keywords in the subject text.
+ * Marks the lesson visually as red + badge "Экзамен/Зачёт/Тест".
+ * — Matches whole Cyrillic words: экзамен, экз, зачёт, зачет, тест, кр, контрольная, диф.зачёт
+ */
+const EXAM_RE = new RegExp(
+  '(?:^|[\\s.,;:])' +
+  '(' +
+    'экзамен|экз\\.?|зачёт|зачет|зач\\.?|тест|диф\\.\\s*зачёт|диф\\.\\s*зачет|контрольн[а-я]*|к\\.\\s*р\\.?|кр|коллоквиум' +
+  ')' +
+  '(?=$|[\\s.,;:,.])',
+  'i'
+);
+
 export function parseGroupCode(name) {
   if (name == null) return null;
   const original = norm(name);
-  // Try the original string first, then uppercase (handles lowercase group codes).
   let m = original.match(GROUP_RE);
   if (!m) {
     const upper = original.toUpperCase();
@@ -57,20 +70,14 @@ export function detectType(text) {
 }
 
 function extractSubject(s) {
-  // First, find the type keyword (лекция, пр., лаб., etc.) — that's where subject ends.
   const m = s.match(SUBJECT_TRIM_RE);
-  if (m) {
-    // Cut everything from the start of the type keyword (and any preceding space/punct).
-    return s.slice(0, m.index).replace(/[\s.,;:]+$/, '');
-  }
-  // No type keyword → take everything up to first comma, semicolon, room, or teacher marker.
+  if (m) return s.slice(0, m.index).replace(/[\s.,;:]+$/, '');
   const cutAt = s.search(/[,;]|№\s*\d|корп\.?|корпус|спорттук/);
   if (cutAt > 0) return s.slice(0, cutAt).replace(/[\s.,;:]+$/, '');
   return s;
 }
 
 function extractRoom(s, subject) {
-  // Look in the part after the subject.
   const tail = s.slice(subject.length);
   const m = tail.match(ROOM_RE);
   if (!m) return '';
@@ -78,13 +85,11 @@ function extractRoom(s, subject) {
 }
 
 function extractTeacher(s, subject, room) {
-  // Strip everything up to & including the room, then find the teacher in the remaining tail.
   let tail = s;
   if (room) {
     const idx = tail.lastIndexOf(room);
     if (idx >= 0) tail = tail.slice(idx + room.length);
   }
-  // Trim only leading whitespace and trailing commas/semicolons — keep trailing dot for "И.И."
   tail = tail.replace(/^[,\s]+|[,;]+$/g, '').replace(/\s+/g, ' ').trim();
   if (!tail) return '';
   const matches = [...tail.matchAll(TEACHER_RE)];
@@ -95,37 +100,36 @@ function extractTeacher(s, subject, room) {
   return cand;
 }
 
+function detectExam(text) {
+  if (!text) return false;
+  return EXAM_RE.test(text);
+}
+
 export function parseCell(raw) {
-  // Reject null/undefined/non-string-non-number/non-finite values.
   if (raw == null) return null;
   if (typeof raw !== 'string' && typeof raw !== 'number') return null;
   if (typeof raw === 'number' && !isFinite(raw)) return null;
   const s = norm(raw);
   if (!s) return null;
   if (KURATOR_RE.test(s)) {
-    return { subject: 'Кураторский час', type: TYPE_IDS.OTHER, room: '', teacher: '' };
+    return { subject: 'Кураторский час', type: TYPE_IDS.OTHER, room: '', teacher: '', isExam: false };
   }
 
-  // 1. Subject first (cut at the type keyword or first room/separator).
   const subject = extractSubject(s);
-
-  // 2. Type — look only in the part AFTER the subject to avoid matching
-  // "лаб" inside "лаборатория" which is part of the subject.
   const rest = s.slice(subject.length);
   let type = detectType(rest);
   if (type === TYPE_IDS.OTHER && /\d/.test(rest) && /(корп|кор\.|ауд|спорттук|аянтча|Оптика)/i.test(rest)) {
     type = TYPE_IDS.PRACTICE;
   }
-
-  // 3. Room — look only after the subject.
   const room = extractRoom(s, subject);
-
-  // 4. Teacher — look only after the room.
   const teacher = extractTeacher(s, subject, room);
+
+  // Detect exam keywords in either the raw text or the trimmed subject.
+  const isExam = detectExam(s) || detectExam(subject);
 
   return {
     subject: subject.replace(/\s+/g, ' ').trim() || s,
-    type, room, teacher
+    type, room, teacher, isExam
   };
 }
 
