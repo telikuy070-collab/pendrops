@@ -1,6 +1,7 @@
-const CACHE = 'schedule-pwa-v14';
-const RUNTIME_CACHE = 'schedule-runtime-v14';
+const CACHE = 'schedule-pwa-v15';
+const RUNTIME_CACHE = 'schedule-runtime-v15';
 const SHARED_CACHE = 'shared-files';
+const REMOTE_SCHEDULE_CACHE = 'remote-schedule-v1';
 const ASSETS = [
   './',
   './index.html',
@@ -16,25 +17,35 @@ const ASSETS = [
   './src/text.js',
   './src/store.js',
   './src/picker.js',
+  './src/admin.js',
   './src/constants.js',
   './src/view/scheduleView.js',
   './src/view/toast.js',
   './src/view/dom.js',
+  './src/view/adminView.js',
   './icons/icon.svg',
   './icons/icon-192.png',
-  './icons/icon-512.png'
+  './icons/icon-512.png',
+  './data/schedule.xls',
+  './data/version.json'
 ];
 
 self.addEventListener('install', e => {
   self.skipWaiting();
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+  e.waitUntil(
+    caches.open(CACHE).then(async c => {
+      // addAll падает целиком если хоть один файл 404.
+      // Пробуем все, но 404 (data/) не валим.
+      await Promise.allSettled(ASSETS.map(u => c.add(u).catch(() => null)));
+    })
+  );
 });
 
 self.addEventListener('activate', e => {
   e.waitUntil(
     Promise.all([
       caches.keys().then(keys =>
-        Promise.all(keys.filter(k => k !== CACHE && k !== RUNTIME_CACHE && k !== SHARED_CACHE).map(k => caches.delete(k)))
+        Promise.all(keys.filter(k => k !== CACHE && k !== RUNTIME_CACHE && k !== SHARED_CACHE && k !== REMOTE_SCHEDULE_CACHE).map(k => caches.delete(k)))
       ),
       self.clients.claim()
     ])
@@ -45,16 +56,21 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   const url = new URL(req.url);
 
-  // Only same-origin
   if (url.origin !== location.origin) return;
 
-  // Share Target: Android Share Sheet шлёт POST multipart/form-data на share-handler.html
+  // Share Target: POST multipart/form-data
   if (req.method === 'POST' && url.pathname.endsWith('/share-handler.html')) {
     e.respondWith(handleShare(req));
     return;
   }
 
-  // Navigation requests → network first, fallback to cached index.html
+  // Remote schedule / version — всегда network-first
+  if (url.pathname.endsWith('/data/schedule.xls') || url.pathname.endsWith('/data/version.json')) {
+    e.respondWith(networkFirstWithCache(req));
+    return;
+  }
+
+  // Navigation
   if (req.mode === 'navigate') {
     e.respondWith(
       fetch(req).catch(() => caches.match('./index.html'))
@@ -62,7 +78,7 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Cache-first с обновлением в фоне (stale-while-revalidate)
+  // Default: cache-first (stale-while-revalidate)
   e.respondWith(
     caches.match(req).then(cached => {
       const networkFetch = fetch(req).then(res => {
@@ -72,23 +88,32 @@ self.addEventListener('fetch', e => {
         }
         return res;
       }).catch(() => cached);
-
       return cached || networkFetch;
     })
   );
 });
 
-/**
- * Android Share Target: получаем multipart/form-data, достаём файл и кладём
- * в SHARED_CACHE. share-handler.html затем прочитает его и сохранит в IDB.
- */
+async function networkFirstWithCache(req) {
+  try {
+    const res = await fetch(req, { cache: 'no-store' });
+    if (res && res.status === 200) {
+      const copy = res.clone();
+      caches.open(REMOTE_SCHEDULE_CACHE).then(c => c.put(req, copy));
+    }
+    return res;
+  } catch (err) {
+    const cached = await caches.match(req);
+    if (cached) return cached;
+    throw err;
+  }
+}
+
 async function handleShare(req) {
   try {
     const formData = await req.formData();
     const file = formData.get('file');
     if (file && typeof file === 'object' && 'stream' in file) {
       const name = file.name || 'shared.xls';
-      // Определяем тип из имени файла если браузер не передал
       const lower = name.toLowerCase();
       let type = file.type;
       if (!type || type === 'application/octet-stream') {
@@ -103,7 +128,6 @@ async function handleShare(req) {
       const cache = await caches.open(SHARED_CACHE);
       await cache.put('/__shared__', response);
     }
-    // 303 See Other — share-handler.html
     return Response.redirect(new URL('./share-handler.html', req.url).href, 303);
   } catch (err) {
     console.error('[SW] share error:', err);

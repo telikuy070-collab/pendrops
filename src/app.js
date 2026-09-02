@@ -6,8 +6,12 @@ import { escapeHtml, debounce } from './text.js';
 import { DAY_ORDER } from './constants.js';
 import { getTodayName } from './timing.js';
 import { pickExcelFile, hasNativeFilePicker } from './picker.js';
+import { createAdminView } from './view/adminView.js';
 
 const LAST_HANDLE = 'lastFile';
+const REMOTE_SCHEDULE_URL = './data/schedule.xls';
+const REMOTE_VERSION_URL = './data/version.json';
+const REMOTE_VERSION_CACHE = 'schedule-meta-v1';
 
 const els = {
   fileInput: /** @type {HTMLInputElement} */ (document.getElementById('fileInput')),
@@ -38,42 +42,7 @@ const els = {
 const state = await loadState();
 const view = createScheduleView(document.getElementById('scheduleContainer'));
 const toast = createToast(document.getElementById('toast'));
-
-/**
- * Если приложение открыто через Android Share Sheet (?shared=1) — загружаем
- * файл из IDB (его положил share-handler.html) и сразу парсим.
- */
-async function consumeSharedFile() {
-  const params = new URLSearchParams(location.search);
-  if (!params.has('shared')) return;
-  const name = params.get('shared') || 'shared.xls';
-  // Чистим URL, чтобы при reload не пытался снова
-  history.replaceState(null, '', location.pathname);
-  try {
-    const idb = await new Promise((resolve, reject) => {
-      const r = indexedDB.open('pendrops-store', 3);
-      r.onsuccess = () => resolve(r.result);
-      r.onerror = () => reject(r.error);
-    });
-    const blob = await new Promise((resolve, reject) => {
-      const tx = idb.transaction('shared', 'readonly');
-      const req = tx.objectStore('shared').get(name);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-    if (!blob) {
-      toast.show('Не удалось загрузить общий файл', 'bad');
-      return;
-    }
-    const file = new File([blob], name, { type: blob.type || 'application/vnd.ms-excel' });
-    await handleFile(file, name);
-    // Чистим IDB, чтобы при следующем открытии не наткнуться на старый файл
-    idb.transaction('shared', 'readwrite').objectStore('shared').delete(name);
-  } catch (err) {
-    console.error(err);
-    toast.show('Ошибка чтения: ' + (err.message || String(err)), 'bad');
-  }
-}
+const admin = createAdminView();
 
 /** @type {string} */
 let activeSubgroup = '';
@@ -92,7 +61,7 @@ async function persist() {
   return where;
 }
 
-/** Форматирует timestamp в "пн, 1 сен 14:30" — коротко и понятно. */
+/** Форматирует timestamp в "пн, 1 сен 14:30". */
 function formatTime(ts) {
   if (!ts) return '';
   const d = new Date(ts);
@@ -141,25 +110,20 @@ const render = debounce(() => {
   view.render(filtered, { today: getTodayName() });
 }, 50);
 
-// --- Quick pick values (top chooser buttons) ---
 function updateQuickPick() {
   if (state.current && els.sheetValue) els.sheetValue.textContent = state.current;
   if (state.group && els.groupValue) els.groupValue.textContent = state.group;
 }
 
-// --- Subgroup chips visibility ---
 function refreshSubgroupChips(lessons) {
-  // Determine the lessons for the currently selected group (or all if none)
   const relevant = state.group ? lessons.filter((l) => l.group === state.group) : lessons;
   const available = new Set(relevant.map((l) => l.subgroup).filter(Boolean));
-
   if (available.size <= 1 && state.group) {
     els.subgroupChipsRow.hidden = true;
     activeSubgroup = '';
     return;
   }
   els.subgroupChipsRow.hidden = false;
-
   const buttons = els.subgroupChips.querySelectorAll('.chip-btn');
   buttons.forEach((btn) => {
     const v = btn.dataset.value || '';
@@ -189,38 +153,25 @@ function refreshControls() {
   }
   els.quickPick.classList.remove('hidden');
   els.reloadBtn.classList.remove('hidden');
-
-  // Сохраняем выбранную группу, чтобы не сбрасывать при hot-reload
   const prevGroup = state.group;
-
-  // Auto-pick first sheet if none
   if (!state.sheets[state.current]) state.current = Object.keys(state.sheets)[0];
-
-  // Auto-pick first group if none
   const groups = uniqueSorted(lessons.map((l) => l.group));
   if (!state.group || !groups.includes(state.group)) {
-    // Пытаемся сохранить предыдущую группу
     if (prevGroup && groups.includes(prevGroup)) {
       state.group = prevGroup;
     } else {
       state.group = groups[0] || '';
     }
   }
-
-  // Auto-detect subgroup if only 1 exists
   refreshSubgroupChips(lessons);
-
-  // Update advanced filters
   const days = uniqueSorted(lessons.map((x) => x.day))
     .sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b));
   els.dayFilter.innerHTML = '<option value="">Все</option>' +
     days.map((d) => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
-
   updateQuickPick();
   render();
 }
 
-// --- Modal helpers ---
 function openModal(modal) {
   modal.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
@@ -273,11 +224,6 @@ function showGroupPicker() {
   openModal(els.groupModal);
 }
 
-/**
- * Загружает xlsx на лету (881 КБ), только когда реально понадобился.
- * Кешируем модуль в module-level promise — повторный drop не скачивает заново.
- * @returns {Promise<any>}
- */
 let xlsxPromise = null;
 function loadXLSX() {
   if (xlsxPromise) return xlsxPromise;
@@ -293,19 +239,12 @@ function loadXLSX() {
   return xlsxPromise;
 }
 
-/**
- * Открывает нативный диалог выбора Excel-файла на устройстве
- * (File System Access API) или fallback на <input type=file>.
- * Запоминает handle в IDB, чтобы в следующий раз открыть одной кнопкой.
- */
 async function openFinder() {
   try {
     const picked = await pickExcelFile();
-    if (!picked || !picked.length) return; // cancelled
+    if (!picked || !picked.length) return;
     const f = picked[0];
-    if (f.handle) {
-      await saveHandle(LAST_HANDLE, f.handle);
-    }
+    if (f.handle) await saveHandle(LAST_HANDLE, f.handle);
     await handleFile(f.file, f.name);
   } catch (err) {
     console.error(err);
@@ -313,16 +252,10 @@ async function openFinder() {
   }
 }
 
-/**
- * Пытается открыть последний использованный файл через сохранённый handle
- * (без диалога выбора). Если handle нет / битый / файл перемещён — возвращает false.
- * @returns {Promise<boolean>}
- */
 async function tryOpenLastHandle() {
   const handle = await loadHandle(LAST_HANDLE);
   if (!handle || typeof handle.getFile !== 'function') return false;
   try {
-    // Проверяем разрешение перед чтением (могло истечь после закрытия PWA)
     if (handle.queryPermission) {
       const q = await handle.queryPermission({ mode: 'read' });
       if (q !== 'granted') {
@@ -339,11 +272,6 @@ async function tryOpenLastHandle() {
   }
 }
 
-// --- File handling ---
-/**
- * @param {File} file
- * @param {string} [nameOverride] — если уже получили имя из handle
- */
 async function handleFile(file, nameOverride) {
   if (!file) return;
   const name = nameOverride || file.name;
@@ -354,7 +282,6 @@ async function handleFile(file, nameOverride) {
     const sheets = parseWorkbook(wb, XLSX);
     const total = Object.values(sheets).reduce((s, a) => s + a.length, 0);
     if (!total) { toast.show('Не удалось распознать строки. Проверьте файл.', 'bad'); return; }
-    // Запоминаем текущий выбор, чтобы попытаться восстановить после загрузки
     const prevSheet = state.current;
     const prevGroup = state.group;
     state.sheets = sheets;
@@ -362,7 +289,7 @@ async function handleFile(file, nameOverride) {
     state.group = '';
     state.loadedAt = Date.now();
     state.fileName = name;
-    // Восстанавливаем отделение и группу, если они есть в новом файле
+    state.source = 'local';
     if (prevSheet && state.sheets[prevSheet]) state.current = prevSheet;
     if (prevGroup) {
       const newGroups = new Set((state.sheets[state.current] || []).map((l) => l.group));
@@ -382,13 +309,102 @@ async function handleFile(file, nameOverride) {
   }
 }
 
+/**
+ * Загружает schedule.xls из репо (data/schedule.xls) и парсит его.
+ * Возвращает true если получилось.
+ */
+async function loadRemoteSchedule(silent = false) {
+  try {
+    const res = await fetch(REMOTE_SCHEDULE_URL + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) {
+      if (!silent) console.warn('Remote schedule not found:', res.status);
+      return false;
+    }
+    const buf = await res.arrayBuffer();
+    const XLSX = await loadXLSX();
+    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+    const sheets = parseWorkbook(wb, XLSX);
+    const total = Object.values(sheets).reduce((s, a) => s + a.length, 0);
+    if (!total) return false;
+    const prevSheet = state.current;
+    const prevGroup = state.group;
+    state.sheets = sheets;
+    state.current = wb.SheetNames[0];
+    state.group = '';
+    state.fileName = 'schedule.xls (auto)';
+    state.source = 'remote';
+    if (prevSheet && state.sheets[prevSheet]) state.current = prevSheet;
+    if (prevGroup) {
+      const newGroups = new Set((state.sheets[state.current] || []).map((l) => l.group));
+      if (newGroups.has(prevGroup)) state.group = prevGroup;
+    }
+    await persist();
+    refreshControls();
+    return true;
+  } catch (err) {
+    if (!silent) console.warn('loadRemoteSchedule error:', err);
+    return false;
+  }
+}
+
+/** Достаёт version.json (используется для проверки обновлений). */
+async function fetchRemoteVersion() {
+  try {
+    const r = await fetch(REMOTE_VERSION_URL + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Показывает тихий top-banner "расписание обновлено". */
+function showUpdateBanner(version) {
+  if (document.getElementById('updateBanner')) return;
+  const b = document.createElement('div');
+  b.id = 'updateBanner';
+  b.className = 'update-banner';
+  b.innerHTML = `
+    <span>📅 Доступно расписание <b>${escapeHtml(version || 'новое')}</b></span>
+    <button id="updateBannerClose">✕</button>
+  `;
+  const topbar = document.querySelector('.topbar');
+  if (topbar && topbar.parentNode) topbar.parentNode.insertBefore(b, topbar.nextSibling);
+  else document.body.prepend(b);
+  b.querySelector('#updateBannerClose').addEventListener('click', () => b.remove());
+  // Автоскрытие через 8 сек
+  setTimeout(() => b.remove(), 8000);
+}
+
+/**
+ * Проверяет version.json, если remote.updated > local — качает новый schedule.xls.
+ */
+async function checkForUpdates(silent = true) {
+  const v = await fetchRemoteVersion();
+  if (!v || !v.updated) return;
+  const localStamp = state.remoteUpdated || '';
+  if (v.updated === localStamp) return; // нет обновления
+  // Обновление!
+  const ok = await loadRemoteSchedule(true);
+  if (ok) {
+    state.remoteUpdated = v.updated;
+    state.remoteVersion = v.version;
+    await persist();
+    if (!silent) {
+      showUpdateBanner(v.version);
+      toast.show('Расписание обновлено: ' + (v.version || ''), 'ok');
+    } else {
+      // Показываем тихий баннер если юзер уже открыл приложение
+          showUpdateBanner(v.version);
+        }
+  }
+}
+
 function bindEvents() {
   els.fileInput.addEventListener('change', (e) => {
     const f = /** @type {HTMLInputElement} */ (e.target).files?.[0];
     if (f) handleFile(f);
   });
-
-  // Кнопки «Найти на устройстве» (на пустом экране + в настройках)
   if (els.findFileBtn) els.findFileBtn.addEventListener('click', openFinder);
   if (els.findFileBtnModal) els.findFileBtnModal.addEventListener('click', () => {
     closeModal(els.settingsModal);
@@ -398,25 +414,15 @@ function bindEvents() {
     if (els.settingsModal) openModal(els.settingsModal);
   });
 
-  // Drag & drop в любом месте страницы.
-  // dragenter/dragleave считают counter, dragend и drop сбрасывают счётчик —
-  // иначе при быстром перетаскивании через дочерние элементы счётчик залипает
-  // и overlay остаётся на экране.
   let dragCounter = 0;
-  const resetDrag = () => {
-    dragCounter = 0;
-    document.body.classList.remove('is-dragging');
-  };
+  const resetDrag = () => { dragCounter = 0; document.body.classList.remove('is-dragging'); };
   document.addEventListener('dragenter', (e) => {
     if (!e.dataTransfer?.types?.includes('Files')) return;
     e.preventDefault();
     dragCounter++;
     document.body.classList.add('is-dragging');
   });
-  document.addEventListener('dragleave', () => {
-    dragCounter--;
-    if (dragCounter <= 0) resetDrag();
-  });
+  document.addEventListener('dragleave', () => { dragCounter--; if (dragCounter <= 0) resetDrag(); });
   document.addEventListener('dragover', (e) => {
     if (!e.dataTransfer?.types?.includes('Files')) return;
     e.preventDefault();
@@ -427,14 +433,13 @@ function bindEvents() {
     const f = e.dataTransfer?.files?.[0];
     if (f) handleFile(f);
   });
-  // dragend срабатывает, если пользователь отменил drop (отпустил вне окна)
   document.addEventListener('dragend', resetDrag);
 
-  // Settings modal
   els.settingsBtn.addEventListener('click', () => {
     if (els.fileHint && Object.keys(state.sheets).length) {
       const stamp = state.loadedAt ? ` · обновлено ${formatTime(state.loadedAt)}` : '';
-      els.fileHint.textContent = `Загружено: ${state.fileName || 'файл'}${stamp}`;
+      const src = state.source === 'remote' ? ' (auto)' : '';
+      els.fileHint.textContent = `Загружено: ${state.fileName || 'файл'}${src}${stamp}`;
     } else if (els.fileHint) {
       els.fileHint.textContent = 'Файл не загружен';
     }
@@ -443,16 +448,13 @@ function bindEvents() {
   els.settingsModal.querySelector('.modal-backdrop').addEventListener('click', () => closeModal(els.settingsModal));
   document.getElementById('closeModal').addEventListener('click', () => closeModal(els.settingsModal));
 
-  // Quick reload: нативный диалог выбора файла (с фильтром по .xls/.xlsx)
   els.reloadBtn.addEventListener('click', openFinder);
-  // Если handle сохранён и permission granted — Reload откроет его без диалога.
   els.reloadBtn.addEventListener('contextmenu', async (e) => {
     e.preventDefault();
     const ok = await tryOpenLastHandle();
     if (!ok) openFinder();
   });
 
-  // Sheet / Group pickers
   els.sheetBtn.addEventListener('click', showSheetPicker);
   els.groupBtn.addEventListener('click', showGroupPicker);
   els.sheetModal.querySelector('.modal-backdrop').addEventListener('click', () => closeModal(els.sheetModal));
@@ -460,7 +462,6 @@ function bindEvents() {
   els.sheetModal.querySelector('[data-close="sheet"]').addEventListener('click', () => closeModal(els.sheetModal));
   els.groupModal.querySelector('[data-close="group"]').addEventListener('click', () => closeModal(els.groupModal));
 
-  // Subgroup chips
   els.subgroupChips.addEventListener('click', (e) => {
     const btn = /** @type {HTMLElement} */ (e.target).closest('.chip-btn');
     if (!btn || btn.hidden) return;
@@ -469,7 +470,6 @@ function bindEvents() {
     render();
   });
 
-  // Advanced filters
   [els.searchInput, els.dayFilter].forEach((el) => el.addEventListener('input', render));
   els.resetBtn.addEventListener('click', () => {
     els.searchInput.value = '';
@@ -479,15 +479,56 @@ function bindEvents() {
 }
 
 function init() {
-  if (Object.keys(state.sheets).length) {
-    refreshControls();
-  }
   bindEvents();
+  initBrandSecretAdmin();
   initBrandConfetti();
   initServiceWorker();
   initInstallPrompt();
-  // Если открыто через Android Share — забираем файл из IDB.
-  consumeSharedFile();
+  initRemoteSync();
+}
+
+function initRemoteSync() {
+  // Стратегия:
+  // 1) Если state пуст (первый запуск) → качаем remote schedule.
+  // 2) Если state непуст → проверяем обновления каждые 6ч.
+  (async () => {
+    if (!Object.keys(state.sheets).length) {
+      // Первый запуск — пробуем remote
+      const ok = await loadRemoteSchedule(true);
+      if (!ok) {
+        // remote нет — оставляем пустой экран с кнопкой "Найти на устройстве"
+        refreshControls();
+      } else {
+        const v = await fetchRemoteVersion();
+        if (v) {
+          state.remoteUpdated = v.updated;
+          state.remoteVersion = v.version;
+          await persist();
+        }
+      }
+    } else {
+      refreshControls();
+      // Проверяем обновления
+      await checkForUpdates(true);
+    }
+  })();
+  // Каждые 6 часов
+  setInterval(() => checkForUpdates(false), 6 * 60 * 60 * 1000);
+}
+
+function initBrandSecretAdmin() {
+  const brand = document.querySelector('.brand');
+  if (!brand) return;
+  let clicks = [];
+  brand.addEventListener('click', () => {
+    const now = Date.now();
+    clicks = clicks.filter((t) => now - t < 3000);
+    clicks.push(now);
+    if (clicks.length >= 10) {
+      clicks = [];
+      admin.show();
+    }
+  });
 }
 
 function initBrandConfetti() {
@@ -522,23 +563,15 @@ function fireConfetti(count = 50) {
     const size = 6 + Math.random() * 8;
     el.style.width = size + 'px';
     el.style.height = size + 'px';
-    // Чистим узел по окончании анимации — нет утечки setTimeout при множественных кликах.
     el.addEventListener('animationend', () => el.remove(), { once: true });
     document.body.appendChild(el);
   }
 }
 
-/**
- * Service Worker registration с уведомлением о новой версии.
- * При activate новой SW мы получаем controllerchange — перезагружаем страницу
- * один раз, чтобы пользователь увидел свежую версию.
- */
 function initServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
-  // Регистрируем ПОСЛЕ load, чтобы не блокировать первый рендер.
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').then((reg) => {
-      // Раз в час проверяем обновления.
       setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
     }).catch(console.error);
   });
@@ -550,16 +583,9 @@ function initServiceWorker() {
   });
 }
 
-/**
- * PWA install prompt.
- * Браузер (Chrome/Edge/Samsung) генерирует событие `beforeinstallprompt` когда
- * приложение соответствует критериям. Сохраняем его и предлагаем пользователю
- * установить через кнопку 📲 и/или автоматически через 30 секунд.
- */
 function initInstallPrompt() {
   const DISMISS_KEY = 'pendrops-install-dismissed';
   const DISMISS_DAYS = 7;
-  // Если пользователь уже отклонил — не показываем неделю.
   const dismissed = (() => {
     try {
       const v = JSON.parse(localStorage.getItem(DISMISS_KEY) || 'null');
@@ -568,8 +594,6 @@ function initInstallPrompt() {
     } catch { return false; }
   })();
   if (dismissed) return;
-
-  // Уже установлено — не показываем.
   if (window.matchMedia('(display-mode: standalone)').matches) return;
   if (/** @type {any} */ (navigator).standalone === true) return;
 
@@ -587,11 +611,9 @@ function initInstallPrompt() {
     toast.show('PenDrops установлено!', 'ok');
   });
 
-  // Кнопка в topbar
   if (els.installBtn) {
     els.installBtn.addEventListener('click', async () => {
       if (!deferredPrompt) {
-        // Браузер не дал prompt — направляем в меню «Добавить на главный экран».
         toast.show('Откройте меню браузера → «Добавить на главный экран»', 'ok');
         return;
       }
@@ -608,7 +630,6 @@ function initInstallPrompt() {
     });
   }
 
-  // Автоматический toast-подсказка через 30 сек, если пользователь ещё не отреагировал.
   setTimeout(() => {
     if (!deferredPrompt || promptShown) return;
     if (els.installBtn && !els.installBtn.classList.contains('hidden')) {
