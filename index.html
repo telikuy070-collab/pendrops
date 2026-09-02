@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0f172a" />
-  <meta name="description" content="PenDrops — расписание мед. колледжа из Excel. Работает офлайн." />
+  <meta name="description" content="PenDrops — расписание мед. колледжа" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="PenDrops" />
@@ -24,7 +24,6 @@
     </div>
     <div class="actions">
       <button id="installBtn" class="btn ghost hidden" title="Установить как приложение" aria-label="Установить PWA">📲</button>
-      <button id="reloadBtn" class="btn ghost hidden" title="Загрузить новый файл" aria-label="Обновить расписание">🔄</button>
       <button id="settingsBtn" class="btn ghost" aria-label="Настройки">⚙</button>
     </div>
   </header>
@@ -52,18 +51,9 @@
   </section>
 
   <main id="scheduleContainer" class="schedule">
-    <div class="empty">
-      <div class="empty-illu">💧</div>
-      <h2>PenDrops ждёт файл</h2>
-      <p>Найдите Excel с расписанием на устройстве или перетащите файл сюда.</p>
-      <div class="empty-actions">
-        <button id="findFileBtn" class="btn primary">
-          <span>🔍</span> Найти на устройстве
-        </button>
-        <button id="openSettingsBtn" class="btn ghost">
-          <span>📂</span> Из другой папки
-        </button>
-      </div>
+    <div class="loading" id="loadingState">
+      <div class="spinner"></div>
+      <p>Загружаем расписание...</p>
     </div>
   </main>
 
@@ -78,16 +68,9 @@
         <button class="modal-close" id="closeModal" aria-label="Закрыть">✕</button>
       </div>
 
-      <div class="modal-section">
-        <h3>Файл расписания</h3>
-        <button id="findFileBtnModal" class="btn primary block">
-          <span>🔍</span> Найти Excel на устройстве
-        </button>
-        <label class="btn ghost block" for="fileInput" style="margin-top: 8px;">
-          <span>📂</span> Из другой папки
-          <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" hidden />
-        </label>
-        <div class="modal-hint" id="fileHint">Файл не загружен</div>
+      <div class="modal-section" id="scheduleInfo" hidden>
+        <h3>Расписание</h3>
+        <div class="modal-hint" id="scheduleInfoText">—</div>
       </div>
 
       <details class="more-filters" id="advancedFilters" open>
