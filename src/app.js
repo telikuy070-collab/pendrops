@@ -19,8 +19,9 @@ const els = {
   groupBtn: document.getElementById('groupBtn'),
   sheetValue: document.getElementById('sheetValue'),
   groupValue: document.getElementById('groupValue'),
-  subgroupChipsRow: document.getElementById('subgroupChipsRow'),
   subgroupChips: document.getElementById('subgroupChips'),
+  sheetBtnEl: document.getElementById('sheetBtn'),
+  groupBtnEl: document.getElementById('groupBtn'),
   searchInput: /** @type {HTMLInputElement} */ (document.getElementById('searchInput')),
   dayFilter: /** @type {HTMLSelectElement} */ (document.getElementById('dayFilter')),
   resetBtn: document.getElementById('resetBtn'),
@@ -95,20 +96,26 @@ const render = debounce(() => {
 }, 50);
 
 function updateQuickPick() {
-  if (state.current && els.sheetValue) els.sheetValue.textContent = state.current;
-  if (state.group && els.groupValue) els.groupValue.textContent = state.group;
+  if (state.current && els.sheetValue) {
+    els.sheetValue.textContent = state.current;
+    if (els.sheetBtnEl) els.sheetBtnEl.removeAttribute('data-empty');
+  }
+  if (state.group && els.groupValue) {
+    els.groupValue.textContent = state.group;
+    if (els.groupBtnEl) els.groupBtnEl.removeAttribute('data-empty');
+  }
 }
 
 function refreshSubgroupChips(lessons) {
   const relevant = state.group ? lessons.filter((l) => l.group === state.group) : lessons;
   const available = new Set(relevant.map((l) => l.subgroup).filter(Boolean));
   if (available.size <= 1 && state.group) {
-    els.subgroupChipsRow.hidden = true;
+    els.subgroupChips.hidden = true;
     activeSubgroup = '';
     return;
   }
-  els.subgroupChipsRow.hidden = false;
-  const buttons = els.subgroupChips.querySelectorAll('.chip-btn');
+  els.subgroupChips.hidden = false;
+  const buttons = els.subgroupChips.querySelectorAll('.qp-chip');
   buttons.forEach((btn) => {
     const v = btn.dataset.value || '';
     if (v === '') { btn.hidden = false; return; }
@@ -119,7 +126,7 @@ function refreshSubgroupChips(lessons) {
 }
 
 function updateChipsActive() {
-  const buttons = els.subgroupChips.querySelectorAll('.chip-btn');
+  const buttons = els.subgroupChips.querySelectorAll('.qp-chip');
   buttons.forEach((btn) => {
     const v = btn.dataset.value || '';
     const isActive = v === activeSubgroup;
@@ -388,7 +395,7 @@ function bindEvents() {
   }
   if (els.subgroupChips) {
     els.subgroupChips.addEventListener('click', (e) => {
-      const btn = /** @type {HTMLElement} */ (e.target).closest('.chip-btn');
+      const btn = /** @type {HTMLElement} */ (e.target).closest('.qp-chip');
       if (!btn || btn.hidden) return;
       activeSubgroup = btn.dataset.value || '';
       updateChipsActive();

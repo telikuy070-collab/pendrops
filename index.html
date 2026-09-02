@@ -20,7 +20,7 @@
   <header class="topbar">
     <div class="brand">
       <span class="logo">💧</span>
-      <h1>PenDrops<small>расписание мед. колледжа</small></h1>
+      <h1>PenDrops</h1>
     </div>
     <div class="actions">
       <button id="installBtn" class="btn ghost hidden" title="Установить как приложение" aria-label="Установить PWA">📲</button>
@@ -29,23 +29,22 @@
   </header>
 
   <section id="quickPick" class="quick-pick hidden">
-    <div class="qp-row">
-      <button id="sheetBtn" class="qp-btn">
-        <span class="qp-label">Отделение</span>
-        <span class="qp-value" id="sheetValue">—</span>
+    <div class="qp-bar">
+      <button id="sheetBtn" class="qp-pill" data-empty="true">
+        <span class="qp-pill-label">Отделение</span>
+        <span class="qp-pill-value" id="sheetValue">—</span>
+        <span class="qp-pill-caret">▾</span>
       </button>
-      <button id="groupBtn" class="qp-btn">
-        <span class="qp-label">Группа</span>
-        <span class="qp-value" id="groupValue">—</span>
+      <button id="groupBtn" class="qp-pill" data-empty="true">
+        <span class="qp-pill-label">Группа</span>
+        <span class="qp-pill-value" id="groupValue">—</span>
+        <span class="qp-pill-caret">▾</span>
       </button>
-    </div>
-    <div class="chips-row" id="subgroupChipsRow" hidden>
-      <span class="chips-label">Подгруппа:</span>
-      <div class="chips" id="subgroupChips">
-        <button type="button" class="chip-btn active" data-value="">Все</button>
-        <button type="button" class="chip-btn" data-value="1">1-я</button>
-        <button type="button" class="chip-btn" data-value="2">2-я</button>
-        <button type="button" class="chip-btn" data-value="3">3-я</button>
+      <div class="qp-chips" id="subgroupChips" hidden>
+        <button type="button" class="qp-chip active" data-value="">Все</button>
+        <button type="button" class="qp-chip" data-value="1">1-я</button>
+        <button type="button" class="qp-chip" data-value="2">2-я</button>
+        <button type="button" class="qp-chip" data-value="3">3-я</button>
       </div>
     </div>
   </section>
