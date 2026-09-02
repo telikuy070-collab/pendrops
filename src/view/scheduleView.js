@@ -73,17 +73,15 @@ const emptyHtml = (title, sub) => `
   </div>`;
 
 /**
- * View supports two modes:
- *  - swipe mode (default on mobile): one day visible at a time, swipe between days, tab bar at bottom
- *  - list mode (desktop): all days stacked vertically
+ * View:
+ *  - Mobile: один день виден, свайп вбок, вверху pill-переключатель дней
+ *  - Desktop: все дни стопкой
  */
 export function createScheduleView(container) {
   /** @type {(d: string) => void} */
   let onDayChange = () => {};
   /** @type {string} */
   let activeDay = '';
-  // Кешируем результат matchMedia, обновляем только при resize — иначе
-  // matchMedia вызывался бы на каждое нажатие клавиши в поиске.
   let isMobile = window.matchMedia('(max-width: 768px)').matches;
   if (typeof ResizeObserver !== 'undefined') {
     const ro = new ResizeObserver(() => {
@@ -103,7 +101,6 @@ export function createScheduleView(container) {
       return;
     }
 
-    // Group by day
     const byDay = new Map();
     for (const it of lessons) {
       const k = it.day || 'Без дня';
@@ -118,32 +115,28 @@ export function createScheduleView(container) {
       return ia - ib;
     });
 
-    // Сбрасываем activeDay, если выбранный день больше не в списке
-    // (например, после фильтра только на одну группу без пятницы).
     if (!ordered.includes(activeDay)) {
       activeDay = meta.today && ordered.includes(meta.today)
         ? meta.today
         : ordered[0] || '';
     }
 
-    const isMobile = window.matchMedia('(max-width: 768px)').matches;
-
     if (!isMobile) {
       activeDay = '';
-      // Desktop: all days stacked
       container.innerHTML = ordered.map((d) => {
         const items = byDay.get(d).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
         return dayBlockHtml(d, items, d === meta.today);
       }).join('');
     } else {
-      // Mobile: day carousel with tabs at bottom
-      const tabsHtml = ordered.map((d) => {
-        const isActive = d === activeDay;
-        return `<button type="button" class="day-tab ${isActive ? 'active' : ''} ${d === meta.today ? 'is-today' : ''}" data-day="${escapeHtml(d)}">
-          <span class="day-tab-day">${DAY_SHORT[d] || escapeHtml(d)}</span>
-          <span class="day-tab-num">${byDay.get(d).length}</span>
-        </button>`;
-      }).join('');
+      // Pill-переключатель дней сверху
+      const pillsHtml = `<div class="day-pills" role="tablist">
+        ${ordered.map((d) => {
+          const isActive = d === activeDay;
+          return `<button type="button" class="day-pill ${isActive ? 'active' : ''} ${d === meta.today ? 'is-today' : ''}" data-day="${escapeHtml(d)}">
+            ${DAY_SHORT[d] || escapeHtml(d)}
+          </button>`;
+        }).join('')}
+      </div>`;
 
       const slidesHtml = ordered.map((d) => {
         const items = byDay.get(d).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
@@ -151,19 +144,14 @@ export function createScheduleView(container) {
         return `<div class="day-slide ${isActive ? 'active' : ''}" data-day="${escapeHtml(d)}">${dayBlockHtml(d, items, d === meta.today)}</div>`;
       }).join('');
 
-      container.innerHTML = `
-        <div class="day-carousel">${slidesHtml}</div>
-        <nav class="day-tabs" role="tablist">${tabsHtml}</nav>`;
+      container.innerHTML = `${pillsHtml}<div class="day-carousel">${slidesHtml}</div>`;
 
-      // Wire up tab clicks
-      container.querySelectorAll('.day-tab').forEach((tab) => {
+      container.querySelectorAll('.day-pill').forEach((tab) => {
         tab.addEventListener('click', () => {
-          const day = tab.dataset.day;
-          showDay(day);
+          showDay(tab.dataset.day);
         });
       });
 
-      // Touch / swipe between days
       attachSwipe(container, ordered, (d) => showDay(d));
     }
   };
@@ -171,12 +159,17 @@ export function createScheduleView(container) {
   function showDay(day) {
     activeDay = day;
     const slides = container.querySelectorAll('.day-slide');
-    const tabs = container.querySelectorAll('.day-tab');
+    const pills = container.querySelectorAll('.day-pill');
     slides.forEach((s) => s.classList.toggle('active', s.dataset.day === day));
-    tabs.forEach((t) => t.classList.toggle('active', t.dataset.day === day));
+    pills.forEach((t) => {
+      t.classList.toggle('active', t.dataset.day === day);
+      // Прокручиваем активный pill в видимую область
+      if (t.dataset.day === day) {
+        t.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }
+    });
     const activeSlide = container.querySelector('.day-slide.active');
     if (activeSlide) {
-      // Scroll into view
       activeSlide.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     onDayChange(day);
