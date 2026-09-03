@@ -2,7 +2,7 @@ const CACHE = 'schedule-pwa-v17';
 const RUNTIME_CACHE = 'schedule-runtime-v17';
 const SHARED_CACHE = 'shared-files';
 const REMOTE_SCHEDULE_CACHE = 'remote-schedule-v1';
-const LAST_VERSION_KEY = '/data/version.json';
+const LAST_VERSION_KEY = './data/version.json';
 
 const ASSETS = [
   './',
