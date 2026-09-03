@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: pages
-  url: true
+  cancel-in-progress: true
 
 jobs:
   build:
