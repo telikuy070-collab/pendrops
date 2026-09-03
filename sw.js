@@ -26,30 +26,42 @@ const ASSETS = [
   './src/view/adminView.js',
   './icons/icon.svg',
   './icons/icon-192.png',
-  './icons/icon-512.png'
+  './icons/icon-512.png',
 ];
 
-self.addEventListener('install', e => {
+self.addEventListener('install', (e) => {
   self.skipWaiting();
   e.waitUntil(
-    caches.open(CACHE).then(async c => {
-      await Promise.allSettled(ASSETS.map(u => c.add(u).catch(() => null)));
+    caches.open(CACHE).then(async (c) => {
+      await Promise.allSettled(ASSETS.map((u) => c.add(u).catch(() => null)));
     })
   );
 });
 
-self.addEventListener('activate', e => {
+self.addEventListener('activate', (e) => {
   e.waitUntil(
     Promise.all([
-      caches.keys().then(keys =>
-        Promise.all(keys.filter(k => k !== CACHE && k !== RUNTIME_CACHE && k !== SHARED_CACHE && k !== REMOTE_SCHEDULE_CACHE).map(k => caches.delete(k)))
-      ),
-      self.clients.claim()
+      caches
+        .keys()
+        .then((keys) =>
+          Promise.all(
+            keys
+              .filter(
+                (k) =>
+                  k !== CACHE &&
+                  k !== RUNTIME_CACHE &&
+                  k !== SHARED_CACHE &&
+                  k !== REMOTE_SCHEDULE_CACHE
+              )
+              .map((k) => caches.delete(k))
+          )
+        ),
+      self.clients.claim(),
     ])
   );
 });
 
-self.addEventListener('fetch', e => {
+self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
@@ -60,27 +72,32 @@ self.addEventListener('fetch', e => {
   }
 
   // data/* — network-first, fallback на cache
-  if (url.pathname.startsWith('/pendrops/data/') || url.pathname.startsWith('./data/') || url.pathname.endsWith('/data/schedule.xls') || url.pathname.endsWith('/data/version.json')) {
+  if (
+    url.pathname.startsWith('/pendrops/data/') ||
+    url.pathname.startsWith('./data/') ||
+    url.pathname.endsWith('/data/schedule.xls') ||
+    url.pathname.endsWith('/data/version.json')
+  ) {
     e.respondWith(networkFirstWithCache(req));
     return;
   }
 
   if (req.mode === 'navigate') {
-    e.respondWith(
-      fetch(req).catch(() => caches.match('./index.html'))
-    );
+    e.respondWith(fetch(req).catch(() => caches.match('./index.html')));
     return;
   }
 
   e.respondWith(
-    caches.match(req).then(cached => {
-      const networkFetch = fetch(req).then(res => {
-        if (res && res.status === 200 && res.type === 'basic') {
-          const copy = res.clone();
-          caches.open(RUNTIME_CACHE).then(c => c.put(req, copy));
-        }
-        return res;
-      }).catch(() => cached);
+    caches.match(req).then((cached) => {
+      const networkFetch = fetch(req)
+        .then((res) => {
+          if (res && res.status === 200 && res.type === 'basic') {
+            const copy = res.clone();
+            caches.open(RUNTIME_CACHE).then((c) => c.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() => cached);
       return cached || networkFetch;
     })
   );
@@ -91,7 +108,7 @@ async function networkFirstWithCache(req) {
     const res = await fetch(req, { cache: 'no-store' });
     if (res && res.status === 200) {
       const copy = res.clone();
-      caches.open(REMOTE_SCHEDULE_CACHE).then(c => c.put(req, copy));
+      caches.open(REMOTE_SCHEDULE_CACHE).then((c) => c.put(req, copy));
     }
     return res;
   } catch (err) {
@@ -110,7 +127,8 @@ async function handleShare(req) {
       const lower = name.toLowerCase();
       let type = file.type;
       if (!type || type === 'application/octet-stream') {
-        if (lower.endsWith('.xlsx')) type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        if (lower.endsWith('.xlsx'))
+          type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         else if (lower.endsWith('.xls')) type = 'application/vnd.ms-excel';
         else if (lower.endsWith('.csv')) type = 'text/csv';
       }
@@ -133,7 +151,7 @@ async function handleShare(req) {
  * Регистрируется клиентом через registration.periodicSync.register('check-schedule', {minInterval: 5*60*1000}).
  * ВАЖНО: periodicSync требует user gesture для permission. Fallback: клиент сам тикает по 5 мин пока PWA открыта.
  */
-self.addEventListener('periodicsync', e => {
+self.addEventListener('periodicsync', (e) => {
   if (e.tag === 'check-schedule') {
     e.waitUntil(checkScheduleUpdate());
   }
@@ -143,7 +161,7 @@ self.addEventListener('periodicsync', e => {
  * Клиент шлёт сообщение "check-schedule" — мы проверяем и качаем новое.
  * Используется как fallback если periodicSync не поддерживается.
  */
-self.addEventListener('message', e => {
+self.addEventListener('message', (e) => {
   const data = e.data;
   if (!data || typeof data !== 'object') return;
   if (data.type === 'check-schedule') {
@@ -172,7 +190,9 @@ async function checkScheduleUpdate() {
       try {
         const lastJson = await lastKnown.clone().json();
         lastStamp = lastJson && lastJson.updated;
-      } catch {}
+      } catch {
+        // intentionally ignored: stale cached version.json parse failure
+      }
     }
 
     if (lastStamp === newStamp) return; // ничего не изменилось
@@ -183,22 +203,30 @@ async function checkScheduleUpdate() {
     const xlsBuf = await xlsRes.arrayBuffer();
 
     // Кладём в cache
-    await cache.put(LAST_VERSION_KEY, new Response(JSON.stringify(verJson), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    }));
-    await cache.put('./data/schedule.xls', new Response(xlsBuf.slice(0), {
-      status: 200,
-      headers: { 'Content-Type': 'application/vnd.ms-excel' }
-    }));
+    await cache.put(
+      LAST_VERSION_KEY,
+      new Response(JSON.stringify(verJson), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    await cache.put(
+      './data/schedule.xls',
+      new Response(xlsBuf.slice(0), {
+        status: 200,
+        headers: { 'Content-Type': 'application/vnd.ms-excel' },
+      })
+    );
 
     // Уведомляем всех клиентов
     const clients = await self.clients.matchAll({ includeUncontrolled: true });
-    clients.forEach(c => c.postMessage({
-      type: 'schedule-updated',
-      version: verJson.version || '',
-      updated: newStamp
-    }));
+    clients.forEach((c) =>
+      c.postMessage({
+        type: 'schedule-updated',
+        version: verJson.version || '',
+        updated: newStamp,
+      })
+    );
   } catch (err) {
     console.warn('[SW] checkScheduleUpdate:', err);
   }

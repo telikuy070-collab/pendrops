@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseTimeRange, lessonState, highlightIndex, getCurrentTime } from '../src/timing.js';
+import { parseTimeRange, lessonState, highlightIndex } from '../src/timing.js';
 
 describe('parseTimeRange', () => {
   it('parses range', () => {
@@ -41,18 +41,11 @@ describe('lessonState', () => {
 
 describe('highlightIndex', () => {
   it('finds "now" lesson', () => {
-    const list = [
-      { time: '08:00-09:20' },
-      { time: '09:30-10:50' },
-      { time: '11:40-13:00' }
-    ];
+    const list = [{ time: '08:00-09:20' }, { time: '09:30-10:50' }, { time: '11:40-13:00' }];
     expect(highlightIndex(list, '10:00')).toEqual({ now: 1, next: -1 });
   });
   it('finds "next" lesson when nothing is happening', () => {
-    const list = [
-      { time: '08:00-09:20' },
-      { time: '09:30-10:50' }
-    ];
+    const list = [{ time: '08:00-09:20' }, { time: '09:30-10:50' }];
     expect(highlightIndex(list, '07:00')).toEqual({ now: -1, next: 0 });
   });
   it('returns empty when all past', () => {
