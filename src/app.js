@@ -147,16 +147,19 @@ function showSubgroupPicker() {
   }
   const lessons = currentLessons().filter((l) => l.group === state.group);
   const available = lessonSubgroups(lessons);
-  els.subgroupList.innerHTML = available
-    .map((sg) => {
-      const count = lessons.filter((l) => l.subgroup === sg).length;
-      const active = sg === state.activeSubgroup;
-      return `<button class="picker-item ${active ? 'active' : ''}" data-subgroup="${escapeHtml(sg)}">
+  els.subgroupList.innerHTML =
+    available.length === 0
+      ? '<div class="picker-empty">Нет подгрупп для этой группы</div>'
+      : available
+          .map((sg) => {
+            const count = lessons.filter((l) => l.subgroup === sg).length;
+            const active = sg === state.activeSubgroup;
+            return `<button class="picker-item ${active ? 'active' : ''}" data-subgroup="${escapeHtml(sg)}">
         <span>${escapeHtml(sg)}</span>
         <span class="picker-item-meta">${count} ${count === 1 ? 'пара' : 'пар'}</span>
       </button>`;
-    })
-    .join('');
+          })
+          .join('');
   els.subgroupList.querySelectorAll('.picker-item').forEach((b) => {
     b.addEventListener('click', async () => {
       state.activeSubgroup = b.dataset.subgroup;
