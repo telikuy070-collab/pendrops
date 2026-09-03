@@ -24,9 +24,9 @@ const ASSETS = [
   './src/view/toast.js',
   './src/view/dom.js',
   './src/view/adminView.js',
-  './icons/icon.svg',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
+  './assets/icons/icon.svg',
+  './assets/icons/icon-192.png',
+  './assets/icons/icon-512.png',
 ];
 
 self.addEventListener('install', (e) => {
