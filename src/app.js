@@ -422,6 +422,18 @@ function init() {
 }
 
 function initRemoteSync() {
+  const hardTimeout = setTimeout(() => {
+    if (els.loadingState && !els.loadingState.classList.contains('hidden')) {
+      if (Object.keys(state.sheets).length) {
+        els.loadingState.classList.add('hidden');
+        refreshControls();
+        toast.show('Не удалось проверить обновления', 'ok');
+      } else {
+        showErrorState('Расписание недоступно');
+      }
+    }
+  }, 8 * 1000);
+
   if (Object.keys(state.sheets).length) {
     if (els.loadingState) els.loadingState.classList.add('hidden');
     refreshControls();
@@ -429,6 +441,7 @@ function initRemoteSync() {
 
   (async () => {
     const ok = await loadRemoteSchedule();
+    clearTimeout(hardTimeout);
     if (ok) {
       if (els.loadingState) els.loadingState.classList.add('hidden');
       const v = await fetchRemoteVersion();
@@ -443,7 +456,6 @@ function initRemoteSync() {
     }
   })();
 
-  setInterval(() => checkForUpdates(true), 6 * 60 * 60 * 1000);
 }
 
 function initBrandGesture() {
@@ -524,9 +536,24 @@ function initServiceWorker() {
     window.addEventListener('load', registerSW);
   }
 }
+let updateToastShown = false;
 function registerSW() {
-  navigator.serviceWorker.register('sw.js').then((reg) => {
-    setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('sw.js').then(async (reg) => {
+    try { await reg.update(); } catch (e) {}
+    if ('periodicSync' in reg) {
+      try {
+        const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
+        if (status.state === 'granted') {
+          await reg.periodicSync.register('check-schedule', { minInterval: 5 * 60 * 1000 });
+        }
+      } catch (e) {}
+    }
+    if (navigator.serviceWorker.controller) {
+      setInterval(() => {
+        navigator.serviceWorker.controller.postMessage({ type: 'check-schedule' });
+      }, 5 * 60 * 1000);
+    }
   }).catch(console.error);
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -534,8 +561,25 @@ function registerSW() {
     reloading = true;
     window.location.reload();
   });
+  navigator.serviceWorker.addEventListener('message', async (e) => {
+    const data = e.data;
+    if (!data || typeof data !== 'object') return;
+    if (data.type === 'schedule-updated' && !updateToastShown) {
+      updateToastShown = true;
+      const ok = await loadRemoteSchedule();
+      if (ok) {
+        state.remoteUpdated = data.updated || new Date().toISOString();
+        state.remoteVersion = data.version || '';
+        await persist();
+        refreshControls();
+        toast.show('Расписание обновлено: ' + (data.version || ''), 'ok');
+        setTimeout(() => { updateToastShown = false; }, 30 * 1000);
+      } else {
+        updateToastShown = false;
+      }
+    }
+  });
 }
-
 function initInstallPrompt() {
   const DISMISS_KEY = 'pendrops-install-dismissed';
   const DISMISS_DAYS = 7;

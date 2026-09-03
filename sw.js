@@ -1,9 +1,9 @@
-const CACHE = 'schedule-pwa-v16';
-const RUNTIME_CACHE = 'schedule-runtime-v16';
+const CACHE = 'schedule-pwa-v17';
+const RUNTIME_CACHE = 'schedule-runtime-v17';
 const SHARED_CACHE = 'shared-files';
 const REMOTE_SCHEDULE_CACHE = 'remote-schedule-v1';
-// НЕ включаем data/schedule.xls в precache — это 3.6 МБ и блокирует install.
-// data грузится network-first с fallback на cache.
+const LAST_VERSION_KEY = '/data/version.json';
+
 const ASSETS = [
   './',
   './index.html',
@@ -72,7 +72,6 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // default: cache-first
   e.respondWith(
     caches.match(req).then(cached => {
       const networkFetch = fetch(req).then(res => {
@@ -126,5 +125,81 @@ async function handleShare(req) {
   } catch (err) {
     console.error('[SW] share error:', err);
     return Response.redirect(new URL('./index.html', req.url).href, 303);
+  }
+}
+
+/**
+ * Периодическая фоновая синхронизация (Chrome/Edge/Opera).
+ * Регистрируется клиентом через registration.periodicSync.register('check-schedule', {minInterval: 5*60*1000}).
+ * ВАЖНО: periodicSync требует user gesture для permission. Fallback: клиент сам тикает по 5 мин пока PWA открыта.
+ */
+self.addEventListener('periodicsync', e => {
+  if (e.tag === 'check-schedule') {
+    e.waitUntil(checkScheduleUpdate());
+  }
+});
+
+/**
+ * Клиент шлёт сообщение "check-schedule" — мы проверяем и качаем новое.
+ * Используется как fallback если periodicSync не поддерживается.
+ */
+self.addEventListener('message', e => {
+  const data = e.data;
+  if (!data || typeof data !== 'object') return;
+  if (data.type === 'check-schedule') {
+    e.waitUntil(checkScheduleUpdate());
+  } else if (data.type === 'skip-waiting') {
+    self.skipWaiting();
+  }
+});
+
+/**
+ * Проверяет version.json. Если новее — качает schedule.xls в cache, шлёт клиентам "schedule-updated".
+ * Не уведомляет сам себя — только клиентов.
+ */
+async function checkScheduleUpdate() {
+  try {
+    const verRes = await fetch(LAST_VERSION_KEY + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!verRes.ok) return;
+    const verJson = await verRes.json();
+    const newStamp = verJson && verJson.updated;
+    if (!newStamp) return;
+
+    const cache = await caches.open(REMOTE_SCHEDULE_CACHE);
+    const lastKnown = (await cache.match(LAST_VERSION_KEY)) || null;
+    let lastStamp = null;
+    if (lastKnown) {
+      try {
+        const lastJson = await lastKnown.clone().json();
+        lastStamp = lastJson && lastJson.updated;
+      } catch {}
+    }
+
+    if (lastStamp === newStamp) return; // ничего не изменилось
+
+    // Качаем новый schedule.xls
+    const xlsRes = await fetch('./data/schedule.xls?t=' + Date.now(), { cache: 'no-store' });
+    if (!xlsRes.ok) return;
+    const xlsBuf = await xlsRes.arrayBuffer();
+
+    // Кладём в cache
+    await cache.put(LAST_VERSION_KEY, new Response(JSON.stringify(verJson), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    }));
+    await cache.put('./data/schedule.xls', new Response(xlsBuf.slice(0), {
+      status: 200,
+      headers: { 'Content-Type': 'application/vnd.ms-excel' }
+    }));
+
+    // Уведомляем всех клиентов
+    const clients = await self.clients.matchAll({ includeUncontrolled: true });
+    clients.forEach(c => c.postMessage({
+      type: 'schedule-updated',
+      version: verJson.version || '',
+      updated: newStamp
+    }));
+  } catch (err) {
+    console.warn('[SW] checkScheduleUpdate:', err);
   }
 }
