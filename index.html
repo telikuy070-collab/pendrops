@@ -40,21 +40,22 @@
         <span class="qp-pill-value" id="groupValue">—</span>
         <span class="qp-pill-caret">▾</span>
       </button>
-      <div class="qp-chips" id="subgroupChips" hidden>
-        <button type="button" class="qp-chip active" data-value="">Все</button>
-        <button type="button" class="qp-chip" data-value="1">1-я</button>
-        <button type="button" class="qp-chip" data-value="2">2-я</button>
-        <button type="button" class="qp-chip" data-value="3">3-я</button>
-      </div>
+      <button id="subgroupBtn" class="qp-pill" data-empty="true">
+        <span class="qp-pill-label">Подгруппа</span>
+        <span class="qp-pill-value" id="subgroupValue">Все</span>
+        <span class="qp-pill-caret">▾</span>
+      </button>
     </div>
   </section>
 
-  <main id="scheduleContainer" class="schedule">
-    <div class="loading" id="loadingState">
-      <div class="spinner"></div>
-      <p>Загружаем расписание...</p>
-    </div>
-  </main>
+   <main id="scheduleContainer" class="schedule">
+     <error-boundary id="scheduleError" message="Расписание недоступно">
+       <div class="loading" id="loadingState">
+         <div class="spinner"></div>
+         <p>Загружаем расписание...</p>
+       </div>
+     </error-boundary>
+   </main>
 
   <div id="toast" class="toast"></div>
 
@@ -101,18 +102,119 @@
     </div>
   </div>
 
-  <!-- Group picker modal -->
-  <div id="groupModal" class="modal hidden" role="dialog" aria-modal="true">
-    <div class="modal-backdrop"></div>
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>Выберите группу</h2>
-        <button class="modal-close" data-close="group" aria-label="Закрыть">✕</button>
-      </div>
-      <div class="picker-list" id="groupList"></div>
+   <!-- Group picker modal -->
+   <div id="groupModal" class="modal hidden" role="dialog" aria-modal="true">
+     <div class="modal-backdrop"></div>
+     <div class="modal-content">
+       <div class="modal-header">
+         <h2>Выберите группу</h2>
+         <button class="modal-close" data-close="group" aria-label="Закрыть">✕</button>
+       </div>
+       <div class="picker-list" id="groupList"></div>
+     </div>
     </div>
-  </div>
 
-  <script type="module" src="src/app.js"></script>
-</body>
+   <!-- Subgroup picker modal -->
+   <div id="subgroupModal" class="modal hidden" role="dialog" aria-modal="true">
+     <div class="modal-backdrop"></div>
+     <div class="modal-content">
+       <div class="modal-header">
+         <h2>Выберите подгруппу</h2>
+         <button class="modal-close" data-close="subgroup" aria-label="Закрыть">✕</button>
+       </div>
+       <div class="picker-list" id="subgroupList"></div>
+     </div>
+    </div>
+
+   <!-- Inline templates for the template engine -->
+   <template id="template-card" hidden>
+     <div class="card" data-card-idx="{{idx}}">
+       <div class="card-top">
+         <span class="time">🕒 {{time}}</span>
+         <div class="card-tags">
+           <span class="exam-badge" data-if="isExam">📝 Экзамен</span>
+           <span class="type-pill {{type}}">{{tpLabel}}</span>
+           <span class="state-pill {{stateClass}}" data-if="stateText">{{stateText}}</span>
+         </div>
+       </div>
+       <div class="subject">{{subject}}</div>
+       <div class="row-info">
+         <span class="chip chip-group" data-if="group"><b>Группа:</b> {{group}}<sup data-if="subgroup">({{subgroup}})</sup></span>
+         <span class="chip chip-teacher" data-if="teacher"><b>Преподаватель:</b> {{teacher}}</span>
+         <span class="chip chip-room" data-if="room"><b>Аудитория:</b> {{room}}</span>
+       </div>
+       <div class="card-live" data-if="isNow">
+         <div class="card-live-bar"><div class="card-live-fill"></div></div>
+         <div class="card-live-text">Осталось <b class="countdown">—</b></div>
+       </div>
+     </div>
+   </template>
+
+   <template id="template-day" hidden>
+     <section class="day {{dayClass}}" data-day="{{day}}" data-status="{{status}}">
+       <header class="day-header">
+         <div class="day-title-block">
+           <div class="day-title">{{day}}</div>
+           <div class="day-badge" data-if="isToday">Сегодня</div>
+         </div>
+         <div class="day-count">{{count}} {{dayWord}}</div>
+       </header>
+       {{heroHTML}}
+       <div class="cards">{{cardsHTML}}</div>
+     </section>
+   </template>
+
+   <template id="template-hero-break" hidden>
+     <div class="hero hero-break">
+       <div class="hero-icon">⏳</div>
+       <div class="hero-body">
+         <div class="hero-title">Перемена</div>
+         <div class="hero-sub">Дальше: <b>{{nextSubject}}</b> в <b>{{nextTime}}</b></div>
+       </div>
+       <div class="hero-countdown countdown">—</div>
+     </div>
+   </template>
+
+   <template id="template-hero-before" hidden>
+     <div class="hero hero-before">
+       <div class="hero-icon">🕐</div>
+       <div class="hero-body">
+         <div class="hero-title">Первая пара через <span class="countdown">—</span></div>
+         <div class="hero-sub"><b>{{subject}}</b> в <b>{{time}}</b></div>
+       </div>
+     </div>
+   </template>
+
+   <template id="template-hero-after" hidden>
+     <div class="hero hero-after">
+       <div class="hero-icon">🎉</div>
+       <div class="hero-body">
+         <div class="hero-title">Пары кончились</div>
+         <div class="hero-sub">Отдыхай</div>
+       </div>
+     </div>
+   </template>
+
+   <template id="template-empty" hidden>
+     <div class="empty">
+       <div class="empty-illu">{{icon}}</div>
+       <h2>{{title}}</h2>
+       <p>{{sub}}</p>
+     </div>
+   </template>
+
+   <template id="template-tomorrow" hidden>
+     <div class="tomorrow-widget">
+       <div class="tw-icon">📅</div>
+       <div class="tw-body">
+         <div class="tw-title">{{day}}</div>
+         <div class="tw-sub">{{count}} {{lessonWord}} · первая в <b>{{firstTime}}</b></div>
+         <div class="tw-first">{{firstSubject}}</div>
+       </div>
+     </div>
+   </template>
+
+   <script type="module" src="src/view/errorBoundary.js"></script>
+   <script type="module" src="src/app.js"></script>
+ </body>
 </html>

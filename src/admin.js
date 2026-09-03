@@ -16,11 +16,11 @@
  * Если data/admin.json отсутствует — показываем инструкцию «как создать токен».
  */
 
-const REPO = 'telikuy070-collab/pendrops';
-const BRANCH = 'main';
-const PIN = '6137';
-const ADMIN_BLOB_URL = `https://raw.githubusercontent.com/${REPO}/${BRANCH}/data/admin.json`;
-const CONTENTS_API = `https://api.github.com/repos/${REPO}/contents`;
+import { ADMIN_CONFIG, ADMIN_BLOB_URL, CONTENTS_API } from './config/admin.js';
+
+const REPO = ADMIN_CONFIG.repo;
+const BRANCH = ADMIN_CONFIG.branch;
+const PIN = ADMIN_CONFIG.pin;
 
 /** base64 из ArrayBuffer (binary-safe) */
 function arrayBufferToBase64(buf) {
@@ -74,6 +74,7 @@ async function fetchAdminBlob() {
     const j = await r.json();
     return j.blob || null;
   } catch {
+    /* fetch failed — admin.json unavailable */
     return null;
   }
 }
@@ -85,7 +86,7 @@ async function fetchAdminBlob() {
  */
 async function getFileSha(token, path) {
   const r = await fetch(`${CONTENTS_API}/${path}?ref=${BRANCH}`, {
-    headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' }
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
   });
   if (!r.ok) return null;
   const j = await r.json();
@@ -104,17 +105,17 @@ async function putFile(token, path, content, message) {
   const body = {
     message,
     branch: BRANCH,
-    content: arrayBufferToBase64(content)
+    content: arrayBufferToBase64(content),
   };
   if (sha) body.sha = sha;
   const r = await fetch(`${CONTENTS_API}/${path}`, {
     method: 'PUT',
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Accept': 'application/vnd.github+json',
-      'Content-Type': 'application/json'
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
   if (!r.ok) {
     const t = await r.text();
@@ -151,18 +152,27 @@ export async function publishSchedule(file) {
     await putFile(token, 'data/schedule.xls', buf, `schedule: ${version} ${datestamp}`);
 
     // 4. Заливаем version.json
-    const versionJson = JSON.stringify({
-      version,
-      updated: iso.toISOString(),
-      size: buf.byteLength,
-      fileName: file.name
-    }, null, 2);
-    await putFile(token, 'data/version.json', new TextEncoder().encode(versionJson).buffer, `version: ${version}`);
+    const versionJson = JSON.stringify(
+      {
+        version,
+        updated: iso.toISOString(),
+        size: buf.byteLength,
+        fileName: file.name,
+      },
+      null,
+      2
+    );
+    await putFile(
+      token,
+      'data/version.json',
+      new TextEncoder().encode(versionJson).buffer,
+      `version: ${version}`
+    );
 
     return {
       version,
       datestamp,
-      scheduleUrl: `https://${REPO.split('/')[0]}.github.io/${REPO.split('/')[1]}/data/schedule.xls`
+      scheduleUrl: `https://${REPO.split('/')[0]}.github.io/${REPO.split('/')[1]}/data/schedule.xls`,
     };
   } finally {
     // 5. Забываем токен (best-effort — JS GC сам уберёт)
@@ -174,7 +184,7 @@ function getISOWeek(d) {
   const day = date.getUTCDay() || 7;
   date.setUTCDate(date.getUTCDate() + 4 - day);
   const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return Math.ceil(((date - yearStart) / 86400000 + 1) / 7);
 }
 
 /**
@@ -184,3 +194,26 @@ export async function isAdminConfigured() {
   const blob = await fetchAdminBlob();
   return blob !== null;
 }
+
+/**
+ * Verifies the admin PIN entered by the user.
+ * Uses a constant-time comparison to mitigate timing attacks.
+ *
+ * @param {string} pin — user-supplied PIN
+ * @returns {boolean}
+ */
+export function verifyPin(pin) {
+  const expected = PIN;
+  if (!pin || typeof pin !== 'string') return false;
+  // Constant-time comparison via Web Crypto
+  const enc = new TextEncoder();
+  const a = enc.encode(pin);
+  const b = enc.encode(expected);
+  if (a.length !== b.length) return false;
+  const buf = new Uint8Array(a.length);
+  for (let i = 0; i < a.length; i++) buf[i] = a[i] ^ b[i];
+  return buf.every((v) => v === 0);
+}
+
+// Re-export config for consumers that need it (e.g. admin UI)
+export { ADMIN_CONFIG };

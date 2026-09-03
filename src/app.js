@@ -6,6 +6,8 @@ import { escapeHtml, debounce } from './text.js';
 import { DAY_ORDER } from './constants.js';
 import { getTodayName } from './timing.js';
 import { createAdminView } from './view/adminView.js';
+import { reportError } from './view/errorBoundary.js';
+import { dedupe } from './utils/requestDedupe.js';
 
 const REMOTE_SCHEDULE_URL = './data/schedule.xls';
 const REMOTE_VERSION_URL = './data/version.json';
@@ -17,23 +19,27 @@ const els = {
   quickPick: document.getElementById('quickPick'),
   sheetBtn: document.getElementById('sheetBtn'),
   groupBtn: document.getElementById('groupBtn'),
+  subgroupBtn: document.getElementById('subgroupBtn'),
   sheetValue: document.getElementById('sheetValue'),
   groupValue: document.getElementById('groupValue'),
-  subgroupChips: document.getElementById('subgroupChips'),
+  subgroupValue: document.getElementById('subgroupValue'),
   sheetBtnEl: document.getElementById('sheetBtn'),
   groupBtnEl: document.getElementById('groupBtn'),
+  subgroupBtnEl: document.getElementById('subgroupBtn'),
   searchInput: /** @type {HTMLInputElement} */ (document.getElementById('searchInput')),
   dayFilter: /** @type {HTMLSelectElement} */ (document.getElementById('dayFilter')),
   resetBtn: document.getElementById('resetBtn'),
   settingsModal: document.getElementById('settingsModal'),
   sheetModal: document.getElementById('sheetModal'),
   groupModal: document.getElementById('groupModal'),
+  subgroupModal: document.getElementById('subgroupModal'),
   sheetList: document.getElementById('sheetList'),
   groupList: document.getElementById('groupList'),
+  subgroupList: document.getElementById('subgroupList'),
   loadingState: document.getElementById('loadingState'),
   scheduleInfo: document.getElementById('scheduleInfo'),
   scheduleInfoText: document.getElementById('scheduleInfoText'),
-  scheduleContainer: document.getElementById('scheduleContainer')
+  scheduleContainer: document.getElementById('scheduleContainer'),
 };
 
 const state = await loadState();
@@ -41,20 +47,34 @@ const view = createScheduleView(document.getElementById('scheduleContainer'));
 const toast = createToast(document.getElementById('toast'));
 const admin = createAdminView();
 
-/** @type {string} */
-let activeSubgroup = '';
+state.activeSubgroup ??= '';
 
 async function persist() {
   try {
     const where = await saveState(state);
     if (where === 'none') toast.show('Не удалось сохранить — изменения только в памяти', 'bad');
-  } catch (e) { /* silent */ }
+  } catch (_e) {
+    /* silent — persist failure is non-critical */
+  }
 }
 
 function formatDateLong(ts) {
   if (!ts) return '';
   const d = new Date(ts);
-  const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  const months = [
+    'января',
+    'февраля',
+    'марта',
+    'апреля',
+    'мая',
+    'июня',
+    'июля',
+    'августа',
+    'сентября',
+    'октября',
+    'ноября',
+    'декабря',
+  ];
   return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
@@ -73,7 +93,9 @@ function applyFilters(lessons, filters) {
   if (filters.search) {
     const q = filters.search;
     out = out.filter((it) =>
-      `${it.day} ${it.time} ${it.group} ${it.subject} ${it.teacher} ${it.room}`.toLowerCase().includes(q)
+      `${it.day} ${it.time} ${it.group} ${it.subject} ${it.teacher} ${it.room}`
+        .toLowerCase()
+        .includes(q)
     );
   }
   return out;
@@ -83,8 +105,8 @@ function readFilters() {
   return {
     day: els.dayFilter.value,
     group: state.group,
-    subgroup: activeSubgroup,
-    search: els.searchInput.value.trim().toLowerCase()
+    subgroup: state.activeSubgroup,
+    search: els.searchInput.value.trim().toLowerCase(),
   };
 }
 
@@ -104,34 +126,56 @@ function updateQuickPick() {
     els.groupValue.textContent = state.group;
     if (els.groupBtnEl) els.groupBtnEl.removeAttribute('data-empty');
   }
+  refreshSubgroupButton();
 }
 
-function refreshSubgroupChips(lessons) {
-  const relevant = state.group ? lessons.filter((l) => l.group === state.group) : lessons;
-  const available = new Set(relevant.map((l) => l.subgroup).filter(Boolean));
-  if (available.size <= 1 && state.group) {
-    els.subgroupChips.hidden = true;
-    activeSubgroup = '';
+function refreshSubgroupButton() {
+  if (!els.subgroupBtnEl) return;
+  if (state.group && state.activeSubgroup && els.subgroupValue) {
+    els.subgroupValue.textContent = state.activeSubgroup;
+    els.subgroupBtnEl.removeAttribute('data-empty');
+  } else {
+    if (els.subgroupValue) els.subgroupValue.textContent = 'Все';
+    els.subgroupBtnEl.setAttribute('data-empty', 'true');
+  }
+}
+
+function showSubgroupPicker() {
+  if (!state.group) {
+    toast.show('Сначала выберите группу', 'bad');
     return;
   }
-  els.subgroupChips.hidden = false;
-  const buttons = els.subgroupChips.querySelectorAll('.qp-chip');
-  buttons.forEach((btn) => {
-    const v = btn.dataset.value || '';
-    if (v === '') { btn.hidden = false; return; }
-    btn.hidden = !available.has(v);
+  const lessons = currentLessons().filter((l) => l.group === state.group);
+  const available = lessonSubgroups(lessons);
+  els.subgroupList.innerHTML = available
+    .map((sg) => {
+      const count = lessons.filter((l) => l.subgroup === sg).length;
+      const active = sg === state.activeSubgroup;
+      return `<button class="picker-item ${active ? 'active' : ''}" data-subgroup="${escapeHtml(sg)}">
+        <span>${escapeHtml(sg)}</span>
+        <span class="picker-item-meta">${count} ${count === 1 ? 'пара' : 'пар'}</span>
+      </button>`;
+    })
+    .join('');
+  els.subgroupList.querySelectorAll('.picker-item').forEach((b) => {
+    b.addEventListener('click', async () => {
+      state.activeSubgroup = b.dataset.subgroup;
+      await persist();
+      closeModal(els.subgroupModal);
+      refreshSubgroupButton();
+      render();
+    });
   });
-  if (activeSubgroup && !available.has(activeSubgroup)) activeSubgroup = '';
-  updateChipsActive();
+  openModal(els.subgroupModal);
 }
 
-function updateChipsActive() {
-  const buttons = els.subgroupChips.querySelectorAll('.qp-chip');
-  buttons.forEach((btn) => {
-    const v = btn.dataset.value || '';
-    const isActive = v === activeSubgroup;
-    btn.classList.toggle('active', isActive);
-    btn.setAttribute('aria-selected', String(isActive));
+function lessonSubgroups(lessons) {
+  const set = new Set(lessons.map((l) => l.subgroup).filter(Boolean));
+  return Array.from(set).sort((a, b) => {
+    const na = Number(a),
+      nb = Number(b);
+    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+    return String(a).localeCompare(String(b), 'ru');
   });
 }
 
@@ -152,10 +196,17 @@ function refreshControls() {
       state.group = groups[0] || '';
     }
   }
-  refreshSubgroupChips(lessons);
-  const days = uniqueSorted(lessons.map((x) => x.day))
-    .sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b));
-  els.dayFilter.innerHTML = '<option value="">Все</option>' +
+  // Validate activeSubgroup belongs to current group
+  const subgroups = lessonSubgroups(lessons.filter((l) => l.group === state.group));
+  if (state.activeSubgroup && !subgroups.includes(state.activeSubgroup)) {
+    state.activeSubgroup = '';
+  }
+  refreshSubgroupButton();
+  const days = uniqueSorted(lessons.map((x) => x.day)).sort(
+    (a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b)
+  );
+  els.dayFilter.innerHTML =
+    '<option value="">Все</option>' +
     days.map((d) => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
   updateQuickPick();
   updateScheduleInfo();
@@ -173,23 +224,36 @@ function updateScheduleInfo() {
   els.scheduleInfoText.textContent = `${v} · обновлено ${d}`.trim();
 }
 
-function openModal(modal) { if (modal) { modal.classList.remove('hidden'); document.body.style.overflow = 'hidden'; } }
-function closeModal(modal) { if (modal) { modal.classList.add('hidden'); document.body.style.overflow = ''; } }
+function openModal(modal) {
+  if (modal) {
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+}
+function closeModal(modal) {
+  if (modal) {
+    modal.classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+}
 
 function showSheetPicker() {
   const names = Object.keys(state.sheets);
-  els.sheetList.innerHTML = names.map((n) => {
-    const count = state.sheets[n].length;
-    const active = n === state.current;
-    return `<button class="picker-item ${active ? 'active' : ''}" data-sheet="${escapeHtml(n)}">
+  els.sheetList.innerHTML = names
+    .map((n) => {
+      const count = state.sheets[n].length;
+      const active = n === state.current;
+      return `<button class="picker-item ${active ? 'active' : ''}" data-sheet="${escapeHtml(n)}">
       <span>${escapeHtml(n)}</span>
       <span class="picker-item-meta">${count} ${count === 1 ? 'запись' : 'записей'}</span>
     </button>`;
-  }).join('');
+    })
+    .join('');
   els.sheetList.querySelectorAll('.picker-item').forEach((b) => {
     b.addEventListener('click', async () => {
       state.current = b.dataset.sheet;
       state.group = '';
+      state.activeSubgroup = '';
       await persist();
       closeModal(els.sheetModal);
       refreshControls();
@@ -200,17 +264,21 @@ function showSheetPicker() {
 
 function showGroupPicker() {
   const groups = uniqueSorted(currentLessons().map((l) => l.group));
-  els.groupList.innerHTML = groups.map((g) => {
-    const count = currentLessons().filter((l) => l.group === g).length;
-    const active = g === state.group;
-    return `<button class="picker-item ${active ? 'active' : ''}" data-group="${escapeHtml(g)}">
+  els.groupList.innerHTML = groups
+    .map((g) => {
+      const count = currentLessons().filter((l) => l.group === g).length;
+      const active = g === state.group;
+      return `<button class="picker-item ${active ? 'active' : ''}" data-group="${escapeHtml(g)}">
       <span>${escapeHtml(g)}</span>
       <span class="picker-item-meta">${count} ${count === 1 ? 'пара' : 'пар'}</span>
     </button>`;
-  }).join('');
+    })
+    .join('');
   els.groupList.querySelectorAll('.picker-item').forEach((b) => {
     b.addEventListener('click', async () => {
-      state.group = b.dataset.group;
+      const newGroup = b.dataset.group;
+      if (newGroup !== state.group) state.activeSubgroup = '';
+      state.group = newGroup;
       await persist();
       closeModal(els.groupModal);
       refreshControls();
@@ -227,7 +295,7 @@ function loadXLSX() {
     const s = document.createElement('script');
     s.src = 'xlsx.full.min.js';
     s.async = true;
-    s.onload = () => window.XLSX ? resolve(window.XLSX) : reject(new Error('XLSX not loaded'));
+    s.onload = () => (window.XLSX ? resolve(window.XLSX) : reject(new Error('XLSX not loaded')));
     s.onerror = () => reject(new Error('Failed to load xlsx.full.min.js'));
     document.head.appendChild(s);
   });
@@ -237,13 +305,7 @@ function loadXLSX() {
 function showErrorState(message) {
   if (els.loadingState) els.loadingState.classList.add('hidden');
   if (els.scheduleContainer) {
-    els.scheduleContainer.innerHTML = `
-      <div class="empty">
-        <div class="empty-illu">📡</div>
-        <h2>${escapeHtml(message)}</h2>
-        <p>Проверьте подключение к интернету и откройте приложение снова.</p>
-      </div>
-    `;
+    reportError(new Error(message));
   }
 }
 
@@ -251,65 +313,88 @@ async function loadXLSXWithTimeout() {
   try {
     return await Promise.race([
       loadXLSX(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('xlsx timeout')), LOAD_TIMEOUT_MS))
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('xlsx timeout')), LOAD_TIMEOUT_MS)
+      ),
     ]);
-  } catch (e) { return null; }
+  } catch (_e) {
+    return null;
+  }
 }
 
+/**
+ * Loads the remote schedule, deduplicating concurrent requests.
+ * First checks the Cache API for an instant cached response,
+ * then falls back to network fetch.
+ */
 async function loadRemoteSchedule() {
-  // Сначала пробуем кеш (мгновенно если уже качали)
-  try {
-    const cache = await caches.open('remote-schedule-v1');
-    const cachedRes = await cache.match(REMOTE_SCHEDULE_URL);
-    if (cachedRes) {
-      const buf = await cachedRes.arrayBuffer();
-      const XLSX = await loadXLSXWithTimeout();
-      if (XLSX) {
-        try {
-          const wb = XLSX.read(buf, { type: 'array', cellDates: true });
-          const sheets = parseWorkbook(wb, XLSX);
-          const total = Object.values(sheets).reduce((s, a) => s + a.length, 0);
-          if (total) {
-            applySheets(sheets, wb.SheetNames[0]);
-            return true;
-          }
-        } catch (e) {}
-      }
-    }
-  } catch {}
-
-  // Иначе из сети
-  try {
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
-    const res = await fetch(REMOTE_SCHEDULE_URL + '?t=' + Date.now(), {
-      cache: 'no-store',
-      signal: controller.signal
-    });
-    clearTimeout(t);
-    if (!res.ok) return false;
-    const buf = await res.arrayBuffer();
-    const XLSX = await loadXLSXWithTimeout();
-    if (!XLSX) return false;
-    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
-    const sheets = parseWorkbook(wb, XLSX);
-    const total = Object.values(sheets).reduce((s, a) => s + a.length, 0);
-    if (!total) return false;
-    applySheets(sheets, wb.SheetNames[0]);
+  return dedupe('remote-schedule', async () => {
     try {
       const cache = await caches.open('remote-schedule-v1');
-      await cache.put(REMOTE_SCHEDULE_URL, new Response(buf.slice(0), {
-        status: 200,
-        headers: { 'Content-Type': 'application/vnd.ms-excel' }
-      }));
-    } catch {}
-    return true;
-  } catch (err) { return false; }
+      const cachedRes = await cache.match(REMOTE_SCHEDULE_URL);
+      if (cachedRes) {
+        const buf = await cachedRes.arrayBuffer();
+        const XLSX = await loadXLSXWithTimeout();
+        if (XLSX) {
+          try {
+            const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+            const sheets = parseWorkbook(wb, XLSX);
+            const total = Object.values(sheets).reduce((s, a) => s + a.length, 0);
+            if (total) {
+              applySheets(sheets, wb.SheetNames[0]);
+              return true;
+            }
+          } catch (_e) {
+            /* cache parse failed — fall through to network */
+          }
+        }
+      }
+    } catch {
+      /* cache open/match failed — try network */
+    }
+
+    // Иначе из сети
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
+      const res = await fetch(REMOTE_SCHEDULE_URL + '?t=' + Date.now(), {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      clearTimeout(t);
+      if (!res.ok) return false;
+      const buf = await res.arrayBuffer();
+      const XLSX = await loadXLSXWithTimeout();
+      if (!XLSX) return false;
+      const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+      const sheets = parseWorkbook(wb, XLSX);
+      const total = Object.values(sheets).reduce((s, a) => s + a.length, 0);
+      if (!total) return false;
+      applySheets(sheets, wb.SheetNames[0]);
+      try {
+        const cache = await caches.open('remote-schedule-v1');
+        await cache.put(
+          REMOTE_SCHEDULE_URL,
+          new Response(buf.slice(0), {
+            status: 200,
+            headers: { 'Content-Type': 'application/vnd.ms-excel' },
+          })
+        );
+      } catch {
+        /* cache.put failed — non-critical, schedule still loaded from network */
+      }
+      return true;
+    } catch (err) {
+      void err;
+      return false;
+    }
+  });
 }
 
 function applySheets(sheets, firstName) {
   const prevSheet = state.current;
   const prevGroup = state.group;
+  const prevSubgroup = state.activeSubgroup;
   state.sheets = sheets;
   state.current = firstName;
   state.group = '';
@@ -320,15 +405,32 @@ function applySheets(sheets, firstName) {
     const newGroups = new Set((state.sheets[state.current] || []).map((l) => l.group));
     if (newGroups.has(prevGroup)) state.group = prevGroup;
   }
+  // Reset subgroup when data changes — subgroup selection may be invalid for new data
+  state.activeSubgroup = '';
+  if (prevSubgroup && prevGroup === state.group) {
+    const relevant = (state.sheets[state.current] || []).filter((l) => l.group === state.group);
+    const available = new Set(relevant.map((l) => l.subgroup).filter(Boolean));
+    if (available.has(prevSubgroup)) state.activeSubgroup = prevSubgroup;
+  }
   persist();
 }
 
+/**
+ * Fetches the remote version.json, deduplicating concurrent requests.
+ * This prevents multiple components (pull-to-refresh, periodic sync, etc.)
+ * from triggering simultaneous network requests for the same resource.
+ */
 async function fetchRemoteVersion() {
-  try {
-    const r = await fetch(REMOTE_VERSION_URL + '?t=' + Date.now(), { cache: 'no-store' });
-    if (!r.ok) return null;
-    return await r.json();
-  } catch { return null; }
+  return dedupe('remote-version', async () => {
+    try {
+      const r = await fetch(REMOTE_VERSION_URL + '?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return null;
+      return await r.json();
+    } catch {
+      /* fetch failed — offline or network error */
+      return null;
+    }
+  });
 }
 
 function showUpdateBanner(version) {
@@ -378,29 +480,42 @@ async function handlePullRefresh() {
 }
 
 function bindEvents() {
-  if (els.settingsBtn) els.settingsBtn.addEventListener('click', () => openModal(els.settingsModal));
+  if (els.settingsBtn)
+    els.settingsBtn.addEventListener('click', () => openModal(els.settingsModal));
   if (els.settingsModal) {
-    els.settingsModal.querySelector('.modal-backdrop')?.addEventListener('click', () => closeModal(els.settingsModal));
-    document.getElementById('closeModal')?.addEventListener('click', () => closeModal(els.settingsModal));
+    els.settingsModal
+      .querySelector('.modal-backdrop')
+      ?.addEventListener('click', () => closeModal(els.settingsModal));
+    document
+      .getElementById('closeModal')
+      ?.addEventListener('click', () => closeModal(els.settingsModal));
   }
   if (els.sheetBtn) els.sheetBtn.addEventListener('click', showSheetPicker);
   if (els.groupBtn) els.groupBtn.addEventListener('click', showGroupPicker);
+  if (els.subgroupBtn) els.subgroupBtn.addEventListener('click', showSubgroupPicker);
   if (els.sheetModal) {
-    els.sheetModal.querySelector('.modal-backdrop')?.addEventListener('click', () => closeModal(els.sheetModal));
-    els.sheetModal.querySelector('[data-close="sheet"]')?.addEventListener('click', () => closeModal(els.sheetModal));
+    els.sheetModal
+      .querySelector('.modal-backdrop')
+      ?.addEventListener('click', () => closeModal(els.sheetModal));
+    els.sheetModal
+      .querySelector('[data-close="sheet"]')
+      ?.addEventListener('click', () => closeModal(els.sheetModal));
   }
   if (els.groupModal) {
-    els.groupModal.querySelector('.modal-backdrop')?.addEventListener('click', () => closeModal(els.groupModal));
-    els.groupModal.querySelector('[data-close="group"]')?.addEventListener('click', () => closeModal(els.groupModal));
+    els.groupModal
+      .querySelector('.modal-backdrop')
+      ?.addEventListener('click', () => closeModal(els.groupModal));
+    els.groupModal
+      .querySelector('[data-close="group"]')
+      ?.addEventListener('click', () => closeModal(els.groupModal));
   }
-  if (els.subgroupChips) {
-    els.subgroupChips.addEventListener('click', (e) => {
-      const btn = /** @type {HTMLElement} */ (e.target).closest('.qp-chip');
-      if (!btn || btn.hidden) return;
-      activeSubgroup = btn.dataset.value || '';
-      updateChipsActive();
-      render();
-    });
+  if (els.subgroupModal) {
+    els.subgroupModal
+      .querySelector('.modal-backdrop')
+      ?.addEventListener('click', () => closeModal(els.subgroupModal));
+    els.subgroupModal
+      .querySelector('[data-close="subgroup"]')
+      ?.addEventListener('click', () => closeModal(els.subgroupModal));
   }
   [els.searchInput, els.dayFilter].forEach((el) => el && el.addEventListener('input', render));
   if (els.resetBtn) {
@@ -456,6 +571,12 @@ function initRemoteSync() {
     }
   })();
 
+  // Мгновенная проверка обновлений при возврате на вкладку/окно
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      checkForUpdates(true);
+    }
+  });
 }
 
 function initBrandGesture() {
@@ -473,7 +594,12 @@ function initBrandGesture() {
     hint.textContent = 'Админка';
     brand.appendChild(hint);
   };
-  const hideHint = () => { if (hint) { hint.remove(); hint = null; } };
+  const hideHint = () => {
+    if (hint) {
+      hint.remove();
+      hint = null;
+    }
+  };
 
   brand.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -489,7 +615,11 @@ function initBrandGesture() {
       }
     }, LONG_PRESS_MS);
   });
-  const cancel = () => { pressing = false; clearTimeout(pressTimer); hideHint(); };
+  const cancel = () => {
+    pressing = false;
+    clearTimeout(pressTimer);
+    hideHint();
+  };
   brand.addEventListener('pointerup', cancel);
   brand.addEventListener('pointerleave', cancel);
   brand.addEventListener('pointercancel', cancel);
@@ -499,7 +629,9 @@ function initBrandGesture() {
   brand.addEventListener('click', () => {
     clickCount++;
     clearTimeout(resetTimer);
-    resetTimer = setTimeout(() => { clickCount = 0; }, 1200);
+    resetTimer = setTimeout(() => {
+      clickCount = 0;
+    }, 1200);
     if (clickCount >= 3) {
       clickCount = 0;
       brand.classList.add('celebrate');
@@ -514,11 +646,11 @@ function fireConfetti(count = 50) {
   for (let i = 0; i < count; i++) {
     const el = document.createElement('div');
     el.className = 'confetti';
-    el.style.left = (Math.random() * 100) + 'vw';
+    el.style.left = Math.random() * 100 + 'vw';
     el.style.top = '-20px';
     el.style.background = colors[i % colors.length];
-    el.style.setProperty('--dx', ((Math.random() - 0.5) * 200) + 'px');
-    el.style.animationDelay = (Math.random() * 0.4) + 's';
+    el.style.setProperty('--dx', (Math.random() - 0.5) * 200 + 'px');
+    el.style.animationDelay = Math.random() * 0.4 + 's';
     el.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
     const size = 6 + Math.random() * 8;
     el.style.width = size + 'px';
@@ -539,22 +671,34 @@ function initServiceWorker() {
 let updateToastShown = false;
 function registerSW() {
   if (!('serviceWorker' in navigator)) return;
-  navigator.serviceWorker.register('sw.js').then(async (reg) => {
-    try { await reg.update(); } catch (e) {}
-    if ('periodicSync' in reg) {
+  navigator.serviceWorker
+    .register('sw.js')
+    .then(async (reg) => {
       try {
-        const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
-        if (status.state === 'granted') {
-          await reg.periodicSync.register('check-schedule', { minInterval: 5 * 60 * 1000 });
+        await reg.update();
+      } catch (_e) {
+        /* SW update failed — non-critical */
+      }
+      if ('periodicSync' in reg) {
+        try {
+          const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
+          if (status.state === 'granted') {
+            await reg.periodicSync.register('check-schedule', { minInterval: 5 * 60 * 1000 });
+          }
+        } catch (_e) {
+          /* Periodic sync not supported — fallback to postMessage */
         }
-      } catch (e) {}
-    }
-    if (navigator.serviceWorker.controller) {
-      setInterval(() => {
-        navigator.serviceWorker.controller.postMessage({ type: 'check-schedule' });
-      }, 5 * 60 * 1000);
-    }
-  }).catch(console.error);
+      }
+      if (navigator.serviceWorker.controller) {
+        setInterval(
+          () => {
+            navigator.serviceWorker.controller.postMessage({ type: 'check-schedule' });
+          },
+          5 * 60 * 1000
+        );
+      }
+    })
+    .catch(console.error);
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (reloading) return;
@@ -573,7 +717,9 @@ function registerSW() {
         await persist();
         refreshControls();
         toast.show('Расписание обновлено: ' + (data.version || ''), 'ok');
-        setTimeout(() => { updateToastShown = false; }, 30 * 1000);
+        setTimeout(() => {
+          updateToastShown = false;
+        }, 30 * 1000);
       } else {
         updateToastShown = false;
       }
@@ -588,7 +734,10 @@ function initInstallPrompt() {
       const v = JSON.parse(localStorage.getItem(DISMISS_KEY) || 'null');
       if (!v) return false;
       return Date.now() - v < DISMISS_DAYS * 24 * 60 * 60 * 1000;
-    } catch { return false; }
+    } catch {
+      /* localStorage parse failed — treat as not dismissed */
+      return false;
+    }
   })();
   if (dismissed) return;
   if (window.matchMedia('(display-mode: standalone)').matches) return;
@@ -622,7 +771,9 @@ function initInstallPrompt() {
         } else {
           localStorage.setItem(DISMISS_KEY, JSON.stringify(Date.now()));
         }
-      } catch {}
+      } catch {
+        /* userChoice promise rejected — ignore, prompt consumed */
+      }
       deferredPrompt = null;
     });
   }
@@ -633,10 +784,14 @@ function initInstallPrompt() {
       promptShown = true;
       toast.show('Установите PenDrops как приложение', 'ok', {
         label: 'Установить',
-        onClick: () => els.installBtn.click()
+        onClick: () => els.installBtn.click(),
       });
     }
   }, 30000);
 }
 
-init();
+try {
+  init();
+} catch (e) {
+  reportError(e);
+}

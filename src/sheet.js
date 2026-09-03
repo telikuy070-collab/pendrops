@@ -2,6 +2,7 @@ import { detectDay } from './day.js';
 import { parseCell, parseGroupCode, splitSubs } from './cell.js';
 import { norm } from './text.js';
 import { MAX_HEADER_SCAN_ROWS, MAX_DAY_LOOKAHEAD } from './constants.js';
+import { parseLessons } from './types/lesson.js';
 
 const HEADER_DAY_RE = /апта\s*күндөрү/i;
 
@@ -47,7 +48,9 @@ function extractBlocks(headerRow) {
       }
       if (groups.length) blocks.push({ dayCol, paraCol, timeCol, groups });
       i = j;
-    } else { i++; }
+    } else {
+      i++;
+    }
   }
   return blocks;
 }
@@ -61,12 +64,25 @@ function expandBlockDays(rows, block) {
   while (r < end) {
     const dRaw = cellAt(rows, r, block.dayCol);
     const d = detectDay(dRaw);
-    if (d) { lastDay = d; days.push({ row: r, day: d }); r++; continue; }
-    const hasContent = cellAt(rows, r, block.paraCol) ||
-                       cellAt(rows, r, block.timeCol) ||
-                       block.groups.some((g) => cellAt(rows, r, g.col));
-    if (lastDay && hasContent) { days.push({ row: r, day: lastDay }); r++; continue; }
-    if (!lastDay && !hasContent) { r++; continue; }
+    if (d) {
+      lastDay = d;
+      days.push({ row: r, day: d });
+      r++;
+      continue;
+    }
+    const hasContent =
+      cellAt(rows, r, block.paraCol) ||
+      cellAt(rows, r, block.timeCol) ||
+      block.groups.some((g) => cellAt(rows, r, g.col));
+    if (lastDay && hasContent) {
+      days.push({ row: r, day: lastDay });
+      r++;
+      continue;
+    }
+    if (!lastDay && !hasContent) {
+      r++;
+      continue;
+    }
     r++;
   }
   return days;
@@ -112,19 +128,22 @@ export function parseSheetRows(rows) {
           if (!parsed) continue;
           lessons.push({
             day: info.day,
-            time, para,
+            time,
+            para,
             group: g.code,
             subgroup: g.subgroup,
             subject: parsed.subject,
             type: parsed.type,
             teacher: parsed.teacher,
-            room: parsed.room
+            room: parsed.room,
+            isExam: parsed.isExam,
           });
         }
       }
     }
   }
-  return lessons;
+  // Validate each lesson via Zod; filter out any that don't pass.
+  return parseLessons(lessons);
 }
 
 /**
@@ -134,7 +153,13 @@ export function parseSheetRows(rows) {
  * @returns {Record<string, Lesson[]>}
  */
 export function parseWorkbook(workbook, xlsx) {
-  if (!workbook || typeof workbook !== 'object' || !Array.isArray(workbook.SheetNames) || !workbook.Sheets) return {};
+  if (
+    !workbook ||
+    typeof workbook !== 'object' ||
+    !Array.isArray(workbook.SheetNames) ||
+    !workbook.Sheets
+  )
+    return {};
   const lib = xlsx || globalThis.XLSX;
   /** @type {Record<string, Lesson[]>} */
   const result = {};

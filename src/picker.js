@@ -25,16 +25,20 @@ export async function pickExcelFile(opts = {}) {
       accept: {
         'application/vnd.ms-excel': ['.xls'],
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-        'text/csv': ['.csv']
-      }
-    }
+        'text/csv': ['.csv'],
+      },
+    },
   ];
 
   // File System Access API
   if (typeof window !== 'undefined' && typeof window.showOpenFilePicker === 'function') {
     try {
       /** @type {FileSystemFileHandle[]} */
-      const handles = await window.showOpenFilePicker({ multiple, types: accept, excludeAcceptAllOption: false });
+      const handles = await window.showOpenFilePicker({
+        multiple,
+        types: accept,
+        excludeAcceptAllOption: false,
+      });
       const out = [];
       for (const h of handles) {
         const file = await h.getFile();
@@ -53,19 +57,26 @@ export async function pickExcelFile(opts = {}) {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.xls,.xlsx,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    input.accept =
+      '.xls,.xlsx,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     input.multiple = multiple;
     input.style.position = 'fixed';
     input.style.left = '-9999px';
-    input.addEventListener('change', () => {
-      const files = Array.from(input.files || []);
-      resolve(files.map((f) => ({ name: f.name, file: f, handle: null })));
-      input.remove();
-    }, { once: true });
+    input.addEventListener(
+      'change',
+      () => {
+        const files = Array.from(input.files || []);
+        resolve(files.map((f) => ({ name: f.name, file: f, handle: null })));
+        input.remove();
+      },
+      { once: true }
+    );
     // Если пользователь отменил — change не сработает. Чистим при focus.
     const cleanup = () => {
       window.removeEventListener('focus', onFocus);
-      setTimeout(() => { if (input.parentNode) input.remove(); }, 1000);
+      setTimeout(() => {
+        if (input.parentNode) input.remove();
+      }, 1000);
     };
     const onFocus = () => {
       // Через секунду после возврата фокуса проверим, был ли выбор

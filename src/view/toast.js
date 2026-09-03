@@ -26,6 +26,6 @@ export function createToast(el) {
       el.className = 'toast show ' + kind;
       clearTimeout(timer);
       timer = setTimeout(() => el.classList.remove('show'), 3500);
-    }
+    },
   };
 }

@@ -1,37 +1,33 @@
 import { TYPE_IDS } from './constants.js';
 import { norm, lower } from './text.js';
 
-// Word boundary that works with Cyrillic / Kyrgyz / any Unicode letter.
-// JS's built-in \b uses \w = [A-Za-z0-9_] and does NOT recognize Cyrillic as word chars.
+// Word boundary for Cyrillic. JS \b doesn't recognize Cyrillic.
 const LEFT = '(?:^|[\\s.,;:])';
 const RIGHT = '(?=$|[\\s.,;:])';
 
 const GROUP_RE = /^([А-ЯA-ZӨҮҢ]{1,6})[-\s]?(\d{1,2})[-\s]?(\d{2})(?:\s*\(?(\d)\)?)?$/;
 
-// A type keyword must be a standalone word: e.g. "лекция", "лаб.", "пр.", but NOT "лек" inside "электро".
-const TYPE_RE = new RegExp(
-  LEFT + '(лекция|лек\\.?|лабораторн[а-я]*|лаб\\.?|практика|практ\\.?|пр\\.?|семинар|сем\\.?)' + RIGHT,
-  'i'
-);
-
 // Detect which type was found.
 const TYPE_KEYWORDS_RE = /(лабораторн|лаб\.)|(лекция|лек\.)|(практик|практ\.|пр\.|семинар|сем\.)/i;
 
-// Same: word boundary for Cyrillic
+// Word boundary for Cyrillic
 const ROOM_RE = new RegExp(
-  LEFT + '((?:корпус|корп\\.?|кор\\.?)\\s*\\d+|спорттук\\s+аянтча|кл\\.\\s*[А-Яа-яA-Za-z0-9 ]+|Оптика|№\\s*\\d+(?:\\s*(?:корпус|корп\\.?|кор\\.?))?(?:\\s*\\d+)?)' + RIGHT,
+  LEFT +
+    '((?:корпус|корп\\.?|кор\\.?)\\s*\\d+|спорттук\\s+аянтча|кл\\.\\s*[А-Яа-яA-Za-z0-9 ]+|Оптика|№\\s*\\d+(?:\\s*(?:корпус|корп\\.?|кор\\.?))?(?:\\s*\\d+)?)' +
+    RIGHT,
   'i'
 );
-const ROOM_STRIP_RE = /(?:корпус|корп\.?|кор\.|спорттук|аянтча|кл\.|Оптика|№\s*\d+)/gi;
 
-const TEACHER_RE = /([А-ЯӨҢҮ][а-яёөңүА-ЯӨҢҮ]{3,}(?:\s+[а-яёөңүА-ЯӨҢҮ]+)*\s+[А-ЯӨҢҮ](?:\.[А-ЯӨҢҮ])?\.?)/g;
+const TEACHER_RE =
+  /([А-ЯӨҢҮ][а-яёөңүА-ЯӨҢҮ]{3,}(?:\s+[а-яёөңүА-ЯӨҢҮ]+)*\s+[А-ЯӨҢҮ](?:\.[А-ЯӨҢҮ])?\.?)/g;
 
 const SUBJECT_TRIM_RE = new RegExp(
-  LEFT + '(?:лекция|лек\\.?|лабораторн[а-я]*|лаб\\.?|практика|практ\\.?|пр\\.?|семинар|сем\\.?)' + RIGHT,
+  LEFT +
+    '(?:лекция|лек\\.?|лабораторн[а-я]*|лаб\\.?|практика|практ\\.?|пр\\.?|семинар|сем\\.?)' +
+    RIGHT,
   'i'
 );
 const KURATOR_RE = /куратордук|куратор/i;
-const NUMBER_RE = /^\d+$/;
 
 /**
  * Detects exam/control work keywords in the subject text.
@@ -40,10 +36,10 @@ const NUMBER_RE = /^\d+$/;
  */
 const EXAM_RE = new RegExp(
   '(?:^|[\\s.,;:])' +
-  '(' +
+    '(' +
     'экзамен|экз\\.?|зачёт|зачет|зач\\.?|тест|диф\\.\\s*зачёт|диф\\.\\s*зачет|контрольн[а-я]*|к\\.\\s*р\\.?|кр|коллоквиум' +
-  ')' +
-  '(?=$|[\\s.,;:,.])',
+    ')' +
+    '(?=$|[\\s.,;:,.])',
   'i'
 );
 
@@ -90,7 +86,10 @@ function extractTeacher(s, subject, room) {
     const idx = tail.lastIndexOf(room);
     if (idx >= 0) tail = tail.slice(idx + room.length);
   }
-  tail = tail.replace(/^[,\s]+|[,;]+$/g, '').replace(/\s+/g, ' ').trim();
+  tail = tail
+    .replace(/^[,\s]+|[,;]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!tail) return '';
   const matches = [...tail.matchAll(TEACHER_RE)];
   if (!matches.length) return '';
@@ -112,13 +111,23 @@ export function parseCell(raw) {
   const s = norm(raw);
   if (!s) return null;
   if (KURATOR_RE.test(s)) {
-    return { subject: 'Кураторский час', type: TYPE_IDS.OTHER, room: '', teacher: '', isExam: false };
+    return {
+      subject: 'Кураторский час',
+      type: TYPE_IDS.OTHER,
+      room: '',
+      teacher: '',
+      isExam: false,
+    };
   }
 
   const subject = extractSubject(s);
   const rest = s.slice(subject.length);
   let type = detectType(rest);
-  if (type === TYPE_IDS.OTHER && /\d/.test(rest) && /(корп|кор\.|ауд|спорттук|аянтча|Оптика)/i.test(rest)) {
+  if (
+    type === TYPE_IDS.OTHER &&
+    /\d/.test(rest) &&
+    /(корп|кор\.|ауд|спорттук|аянтча|Оптика)/i.test(rest)
+  ) {
     type = TYPE_IDS.PRACTICE;
   }
   const room = extractRoom(s, subject);
@@ -129,11 +138,17 @@ export function parseCell(raw) {
 
   return {
     subject: subject.replace(/\s+/g, ' ').trim() || s,
-    type, room, teacher, isExam
+    type,
+    room,
+    teacher,
+    isExam,
   };
 }
 
 export function splitSubs(raw) {
   if (!raw) return [];
-  return String(raw).split('/').map((s) => s.trim()).filter(Boolean);
+  return String(raw)
+    .split('/')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }

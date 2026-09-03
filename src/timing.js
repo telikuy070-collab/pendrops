@@ -1,4 +1,4 @@
-import { JS_DAY_TO_NAME, DAY_ORDER } from './constants.js';
+import { JS_DAY_TO_NAME } from './constants.js';
 
 /**
  * Returns today's day name in our normalized form (e.g. "Понедельник").

@@ -2,7 +2,7 @@
  * UI админки PenDrops.
  * Модалка: PIN → drop zone → статус → кнопка Опубликовать.
  */
-import { publishSchedule, isAdminConfigured } from '../admin.js';
+import { publishSchedule, isAdminConfigured, verifyPin } from '../admin.js';
 
 export function createAdminView() {
   let open = false;
@@ -77,28 +77,42 @@ export function createAdminView() {
 
   pinBtn.addEventListener('click', () => {
     const v = pin.value.trim();
-    if (!v) { showError('Введите PIN'); return; }
-    if (v !== '6137') { showError('Неверный PIN'); pin.value = ''; return; }
+    if (!v) {
+      showError('Введите PIN');
+      return;
+    }
+    if (!verifyPin(v)) {
+      showError('Неверный PIN');
+      pin.value = '';
+      return;
+    }
     stepPin.classList.add('hidden');
     stepDrop.classList.remove('hidden');
     status.textContent = '⏳ Проверяю настройки...';
-    isAdminConfigured().then(ok => {
+    isAdminConfigured().then((ok) => {
       status.textContent = ok
         ? '✅ Токен найден, готов к публикации'
         : '⚠️ admin.json не найден в репо. См. README.';
     });
   });
-  pin.addEventListener('keydown', (e) => { if (e.key === 'Enter') pinBtn.click(); });
+  pin.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') pinBtn.click();
+  });
 
   drop.addEventListener('click', () => file.click());
-  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('is-drag'); });
+  drop.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    drop.classList.add('is-drag');
+  });
   drop.addEventListener('dragleave', () => drop.classList.remove('is-drag'));
   drop.addEventListener('drop', (e) => {
     e.preventDefault();
     drop.classList.remove('is-drag');
     if (e.dataTransfer?.files?.[0]) setFile(e.dataTransfer.files[0]);
   });
-  file.addEventListener('change', () => { if (file.files?.[0]) setFile(file.files[0]); });
+  file.addEventListener('change', () => {
+    if (file.files?.[0]) setFile(file.files[0]);
+  });
 
   function setFile(f) {
     pickedFile = f;
@@ -130,9 +144,9 @@ export function createAdminView() {
     }
   });
 
-  root.querySelectorAll('[data-close="admin"]').forEach(el =>
-    el.addEventListener('click', close)
-  );
+  root
+    .querySelectorAll('[data-close="admin"]')
+    .forEach((el) => el.addEventListener('click', close));
 
   function show() {
     root.classList.remove('hidden');
@@ -153,7 +167,9 @@ export function createAdminView() {
     status.textContent = '';
     errEl.classList.add('hidden');
   }
-  function isOpen() { return open; }
+  function isOpen() {
+    return open;
+  }
 
   return { show, close, isOpen };
 }

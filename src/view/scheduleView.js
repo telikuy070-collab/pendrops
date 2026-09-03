@@ -1,27 +1,39 @@
 import { escapeHtml } from '../text.js';
 import { TYPE_LABELS, DAY_SHORT, DAY_ORDER } from '../constants.js';
-import { lessonState, highlightIndex, dayStatus, getNextLesson, getNowMinutes, timeToMin, formatCountdown, getTomorrowName } from '../timing.js';
+import {
+  lessonState,
+  highlightIndex,
+  dayStatus,
+  getNextLesson,
+  getNowMinutes,
+  timeToMin,
+  formatCountdown,
+  getTomorrowName,
+} from '../timing.js';
 
 const dayWord = (n) => {
-  const mod10 = n % 10, mod100 = n % 100;
+  const mod10 = n % 10,
+    mod100 = n % 100;
   if (mod10 === 1 && mod100 !== 11) return 'занятие';
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'занятия';
   return 'занятий';
 };
 
 const lessonWord = (n) => {
-  const mod10 = n % 10, mod100 = n % 100;
+  const mod10 = n % 10,
+    mod100 = n % 100;
   if (mod10 === 1 && mod100 !== 11) return 'пара';
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'пары';
   return 'пар';
 };
 
-const stateLabel = (s) => ({
-  now:  { tag: 'now',  text: '● Сейчас' },
-  next: { tag: 'next', text: 'Дальше' },
-  past: { tag: 'past', text: 'Завершено' },
-  idle: { tag: '',     text: '' }
-}[s] || { tag: '', text: '' });
+const stateLabel = (s) =>
+  ({
+    now: { tag: 'now', text: '● Сейчас' },
+    next: { tag: 'next', text: 'Дальше' },
+    past: { tag: 'past', text: 'Завершено' },
+    idle: { tag: '', text: '' },
+  })[s] || { tag: '', text: '' };
 
 /**
  * Прогресс-бар для текущей пары (0..100).
@@ -63,9 +75,16 @@ const cardHtml = (lesson, idx, highlight) => {
   if (lesson.isExam) cls.push('is-exam');
 
   const meta = [];
-  if (lesson.group) meta.push(`<span class="chip chip-group"><b>Группа:</b> ${escapeHtml(lesson.group)}${lesson.subgroup ? ` <sup>(${escapeHtml(lesson.subgroup)})</sup>` : ''}</span>`);
-  if (lesson.teacher) meta.push(`<span class="chip chip-teacher"><b>Преподаватель:</b> ${escapeHtml(lesson.teacher)}</span>`);
-  if (lesson.room) meta.push(`<span class="chip chip-room"><b>Аудитория:</b> ${escapeHtml(lesson.room)}</span>`);
+  if (lesson.group)
+    meta.push(
+      `<span class="chip chip-group"><b>Группа:</b> ${escapeHtml(lesson.group)}${lesson.subgroup ? ` <sup>(${escapeHtml(lesson.subgroup)})</sup>` : ''}</span>`
+    );
+  if (lesson.teacher)
+    meta.push(
+      `<span class="chip chip-teacher"><b>Преподаватель:</b> ${escapeHtml(lesson.teacher)}</span>`
+    );
+  if (lesson.room)
+    meta.push(`<span class="chip chip-room"><b>Аудитория:</b> ${escapeHtml(lesson.room)}</span>`);
 
   const sl = stateLabel(state);
   const stateBlock = sl.text ? `<span class="state-pill ${sl.tag}">${sl.text}</span>` : '';
@@ -73,11 +92,13 @@ const cardHtml = (lesson, idx, highlight) => {
   const examBadge = lesson.isExam ? `<span class="exam-badge">📝 Экзамен</span>` : '';
 
   // Live-таймер и прогресс показываем ТОЛЬКО для is-now карточки
-  const liveHtml = isNow ? `
+  const liveHtml = isNow
+    ? `
     <div class="card-live">
       <div class="card-live-bar"><div class="card-live-fill"></div></div>
       <div class="card-live-text">Осталось <b class="countdown">—</b></div>
-    </div>` : '';
+    </div>`
+    : '';
 
   return `
     <div class="${cls.join(' ')}" data-card-idx="${idx}">
@@ -140,7 +161,7 @@ const heroHtml = (lessons, status) => {
   return '';
 };
 
-const dayBlockHtml = (day, items, isToday, today) => {
+const dayBlockHtml = (day, items, isToday, _today) => {
   const hl = highlightIndex(items);
   const status = dayStatus(items);
   const hero = heroHtml(items, status);
@@ -177,13 +198,6 @@ const tomorrowWidgetHtml = (lessons, todayName) => {
     if (!byDay.has(l.day)) byDay.set(l.day, []);
     byDay.get(l.day).push(l);
   }
-  const ordered = [...byDay.keys()].sort((a, b) => {
-    const ia = DAY_ORDER.indexOf(a), ib = DAY_ORDER.indexOf(b);
-    if (ia === -1 && ib === -1) return a.localeCompare(b, 'ru');
-    if (ia === -1) return 1;
-    if (ib === -1) return -1;
-    return ia - ib;
-  });
   // Сначала ищем "завтра" по реальному дню недели
   const tomorrowName = getTomorrowName();
   let nextDay = null;
@@ -194,11 +208,17 @@ const tomorrowWidgetHtml = (lessons, todayName) => {
     for (let i = 1; i <= 7; i++) {
       const idx = (todayIdx + i) % 7;
       const name = DAY_ORDER[idx];
-      if (byDay.has(name)) { nextDay = name; break; }
+      if (byDay.has(name)) {
+        nextDay = name;
+        break;
+      }
     }
   }
   if (!nextDay) return '';
-  const nextLessons = byDay.get(nextDay).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  const nextLessons = byDay
+    .get(nextDay)
+    .slice()
+    .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
   const first = nextLessons[0];
   if (!first) return '';
   return `
@@ -230,8 +250,6 @@ export function createScheduleView(container) {
   let activeDay = '';
   /** @type {any[]} */
   let lastLessons = [];
-  /** @type {string} */
-  let lastToday = '';
   let isMobile = window.matchMedia('(max-width: 768px)').matches;
   if (typeof ResizeObserver !== 'undefined') {
     const ro = new ResizeObserver(() => {
@@ -280,7 +298,9 @@ export function createScheduleView(container) {
   };
 
   // --- Pull-to-refresh (mobile) ---
-  let pullStartY = 0, pulling = false, pullEl = null;
+  let pullStartY = 0,
+    pulling = false,
+    pullEl = null;
   const attachPull = () => {
     if (pullEl) pullEl.remove();
     pullEl = document.createElement('div');
@@ -296,7 +316,8 @@ export function createScheduleView(container) {
       if (!pulling) return;
       const dy = e.touches[0].clientY - pullStartY;
       if (dy > 60 && window.scrollY < 5) pullEl.classList.add('is-ready');
-      if (dy > 0 && window.scrollY < 5) pullEl.style.transform = `translateY(${Math.min(dy, 120)}px)`;
+      if (dy > 0 && window.scrollY < 5)
+        pullEl.style.transform = `translateY(${Math.min(dy, 120)}px)`;
     };
     const onTouchEnd = (e) => {
       if (!pulling) return;
@@ -318,12 +339,15 @@ export function createScheduleView(container) {
   const render = (lessons, meta) => {
     // Сохраняем для live-таймера и для "завтра"
     lastLessons = lessons;
-    lastToday = meta.today || '';
+    void meta.today;
 
     if (!lessons.length) {
       // Если есть данные в lessons, но фильтр всё отрезал — показываем пусто.
       // Иначе: empty state с "завтра" (если есть state.sheets)
-      container.innerHTML = emptyHtml('Ничего не найдено', 'Попробуйте изменить фильтры или поисковый запрос.');
+      container.innerHTML = emptyHtml(
+        'Ничего не найдено',
+        'Попробуйте изменить фильтры или поисковый запрос.'
+      );
       activeDay = '';
       return;
     }
@@ -338,7 +362,8 @@ export function createScheduleView(container) {
     for (const list of byDay.values()) ensureParsed(list);
 
     const ordered = [...byDay.keys()].sort((a, b) => {
-      const ia = DAY_ORDER.indexOf(a), ib = DAY_ORDER.indexOf(b);
+      const ia = DAY_ORDER.indexOf(a),
+        ib = DAY_ORDER.indexOf(b);
       if (ia === -1 && ib === -1) return a.localeCompare(b, 'ru');
       if (ia === -1) return 1;
       if (ib === -1) return -1;
@@ -346,44 +371,55 @@ export function createScheduleView(container) {
     });
 
     if (!ordered.includes(activeDay)) {
-      activeDay = meta.today && ordered.includes(meta.today)
-        ? meta.today
-        : ordered[0] || '';
+      activeDay = meta.today && ordered.includes(meta.today) ? meta.today : ordered[0] || '';
     }
 
     if (!isMobile) {
       activeDay = '';
-      container.innerHTML = ordered.map((d) => {
-        const items = byDay.get(d).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-        return dayBlockHtml(d, items, d === meta.today, meta.today);
-      }).join('');
+      container.innerHTML = ordered
+        .map((d) => {
+          const items = byDay
+            .get(d)
+            .slice()
+            .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+          return dayBlockHtml(d, items, d === meta.today, meta.today);
+        })
+        .join('');
     } else {
       // Сегодня — особый случай: если сегодня пар нет (или пусто в текущей выборке),
       // показываем "завтра" поверх пустого дня.
       const todayName = meta.today;
-      const todayItems = todayName ? (byDay.get(todayName) || []) : [];
+      const todayItems = todayName ? byDay.get(todayName) || [] : [];
       const todayIsEmpty = !todayItems.length;
 
       // Если сегодня пустой И это "первый" показ — добавляем tomorrow widget
       const tomorrowWidget = todayIsEmpty ? tomorrowWidgetHtml(lessons, todayName) : '';
 
       const pillsHtml = `<div class="day-pills" role="tablist">
-        ${ordered.map((d) => {
-          const isActive = d === activeDay;
-          return `<button type="button" class="day-pill ${isActive ? 'active' : ''} ${d === meta.today ? 'is-today' : ''}" data-day="${escapeHtml(d)}">
+        ${ordered
+          .map((d) => {
+            const isActive = d === activeDay;
+            return `<button type="button" class="day-pill ${isActive ? 'active' : ''} ${d === meta.today ? 'is-today' : ''}" data-day="${escapeHtml(d)}">
             ${DAY_SHORT[d] || escapeHtml(d)}
           </button>`;
-        }).join('')}
+          })
+          .join('')}
       </div>`;
 
-      const slidesHtml = ordered.map((d) => {
-        const items = byDay.get(d).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-        const isActive = d === activeDay;
-        const isTodayDay = d === meta.today;
-        return `<div class="day-slide ${isActive ? 'active' : ''}" data-day="${escapeHtml(d)}">${dayBlockHtml(d, items, isTodayDay, meta.today)}</div>`;
-      }).join('');
+      const slidesHtml = ordered
+        .map((d) => {
+          const items = byDay
+            .get(d)
+            .slice()
+            .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+          const isActive = d === activeDay;
+          const isTodayDay = d === meta.today;
+          return `<div class="day-slide ${isActive ? 'active' : ''}" data-day="${escapeHtml(d)}">${dayBlockHtml(d, items, isTodayDay, meta.today)}</div>`;
+        })
+        .join('');
 
-      container.innerHTML = tomorrowWidget + pillsHtml + `<div class="day-carousel">${slidesHtml}</div>`;
+      container.innerHTML =
+        tomorrowWidget + pillsHtml + `<div class="day-carousel">${slidesHtml}</div>`;
 
       container.querySelectorAll('.day-pill').forEach((tab) => {
         tab.addEventListener('click', () => showDay(tab.dataset.day));
@@ -451,7 +487,8 @@ export function createScheduleView(container) {
     slides.forEach((s) => s.classList.toggle('active', s.dataset.day === day));
     pills.forEach((t) => {
       t.classList.toggle('active', t.dataset.day === day);
-      if (t.dataset.day === day) t.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      if (t.dataset.day === day)
+        t.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
     });
     const activeSlide = container.querySelector('.day-slide.active');
     if (activeSlide) activeSlide.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -459,29 +496,50 @@ export function createScheduleView(container) {
   }
 
   function attachSwipe(root, days, cb) {
-    let startX = 0, startY = 0, dx = 0, dy = 0, locked = false, touchStartTime = 0;
+    let startX = 0,
+      startY = 0,
+      dx = 0,
+      dy = 0,
+      locked = false,
+      _touchStartTime = 0;
     const slidesRoot = root.querySelector('.day-carousel');
     if (!slidesRoot) return;
-    slidesRoot.addEventListener('touchstart', (e) => {
-      const t = e.touches[0];
-      startX = t.clientX; startY = t.clientY; dx = 0; dy = 0; locked = false;
-      touchStartTime = Date.now();
-    }, { passive: true });
-    slidesRoot.addEventListener('touchmove', (e) => {
-      const t = e.touches[0];
-      dx = t.clientX - startX;
-      dy = t.clientY - startY;
-      if (!locked) {
-        if (Math.abs(dx) > Math.abs(dy) * 1.4) locked = 'h';
-        else if (Math.abs(dy) > Math.abs(dx) * 1.4) locked = 'v';
-      }
-    }, { passive: true });
-    slidesRoot.addEventListener('touchend', () => {
-      if (locked !== 'h' || Math.abs(dx) < 50) return;
-      const idx = days.indexOf(activeDay);
-      if (dx < 0 && idx < days.length - 1) cb(days[idx + 1]);
-      else if (dx > 0 && idx > 0) cb(days[idx - 1]);
-    }, { passive: true });
+    slidesRoot.addEventListener(
+      'touchstart',
+      (e) => {
+        const t = e.touches[0];
+        startX = t.clientX;
+        startY = t.clientY;
+        dx = 0;
+        dy = 0;
+        locked = false;
+        _touchStartTime = Date.now();
+      },
+      { passive: true }
+    );
+    slidesRoot.addEventListener(
+      'touchmove',
+      (e) => {
+        const t = e.touches[0];
+        dx = t.clientX - startX;
+        dy = t.clientY - startY;
+        if (!locked) {
+          if (Math.abs(dx) > Math.abs(dy) * 1.4) locked = 'h';
+          else if (Math.abs(dy) > Math.abs(dx) * 1.4) locked = 'v';
+        }
+      },
+      { passive: true }
+    );
+    slidesRoot.addEventListener(
+      'touchend',
+      () => {
+        if (locked !== 'h' || Math.abs(dx) < 50) return;
+        const idx = days.indexOf(activeDay);
+        if (dx < 0 && idx < days.length - 1) cb(days[idx + 1]);
+        else if (dx > 0 && idx > 0) cb(days[idx - 1]);
+      },
+      { passive: true }
+    );
   }
 
   // Привязываем pull-to-refresh при первом render на mobile
@@ -502,10 +560,18 @@ export function createScheduleView(container) {
 
   return {
     render,
-    start() { start(); ensurePull(); attachCardVibrate(); },
+    start() {
+      start();
+      ensurePull();
+      attachCardVibrate();
+    },
     stop,
     showDay,
-    setOnDayChange: (cb) => { onDayChange = cb; },
-    setOnRefresh: (cb) => { onRefresh = cb; }
+    setOnDayChange: (cb) => {
+      onDayChange = cb;
+    },
+    setOnRefresh: (cb) => {
+      onRefresh = cb;
+    },
   };
 }

@@ -1,0 +1,12 @@
+<div class="day-pills" role="tablist">
+  {{#pills}}
+  <button type="button" class="day-pill {{pillClass}}" data-day="{{day}}">
+    {{short}}
+  </button>
+  {{/pills}}
+</div>
+<div class="day-carousel">
+  {{#slides}}
+  <div class="day-slide {{slideClass}}" data-day="{{day}}"></div>
+  {{/slides}}
+</div>

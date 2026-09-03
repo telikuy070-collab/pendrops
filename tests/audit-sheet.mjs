@@ -1,0 +1,10 @@
+import { parseWorkbook, parseSheetRows } from '../src/sheet.js';
+console.log('null:', JSON.stringify(parseWorkbook(null)));
+console.log('undefined:', JSON.stringify(parseWorkbook(undefined)));
+console.log('{}:', JSON.stringify(parseWorkbook({})));
+console.log('no SheetNames:', JSON.stringify(parseWorkbook({ Sheets: {} })));
+console.log('empty SheetNames:', JSON.stringify(parseWorkbook({ SheetNames: [], Sheets: {} })));
+console.log('---');
+console.log('parseSheetRows(42):', JSON.stringify(parseSheetRows(42)));
+console.log('parseSheetRows("abc"):', JSON.stringify(parseSheetRows('abc')));
+console.log('parseSheetRows({}):', JSON.stringify(parseSheetRows({})));

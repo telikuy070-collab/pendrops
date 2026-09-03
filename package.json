@@ -1,18 +1,39 @@
 {
   "name": "pendrops-schedule",
-  "version": "1.0.0",
+  "version": "1.7.0",
   "description": "PWA-приложение для отображения расписания мед. колледжа из Excel",
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "python -m http.server 8080",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:edge": "node tests/edge-cases.js",
+    "test:store": "node tests/store-audit.js",
+    "test:security": "node tests/security-audit.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --fix && prettier --write .",
+    "prepare": "husky"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.6",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.69.0",
+    "vite": "^8.2.2",
     "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "zod": "^4.5.4"
   }
 }

@@ -16,7 +16,7 @@ function openIDB() {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') return reject(new Error('no idb'));
     const req = indexedDB.open(IDB_NAME, 2);
-    req.onupgradeneeded = (e) => {
+    req.onupgradeneeded = (_e) => {
       const db = req.result;
       if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
       if (!db.objectStoreNames.contains(IDB_HANDLES)) db.createObjectStore(IDB_HANDLES);
@@ -74,7 +74,9 @@ export async function loadState() {
       const valid = validateState(parsed);
       if (valid) return valid;
     }
-  } catch { /* fallback ниже */ }
+  } catch {
+    /* fallback ниже */
+  }
 
   // 2. IndexedDB fallback
   const fromIdb = await idbGet();
@@ -99,6 +101,8 @@ export async function saveState(state) {
     localStorage.setItem(STORAGE_KEY, json);
     return 'ls';
   } catch (e) {
+    /* localStorage unavailable — fall through to IDB */
+    void e;
     const ok = await idbSet(json);
     return ok ? 'idb' : 'none';
   }
@@ -106,18 +110,23 @@ export async function saveState(state) {
 
 function validateState(parsed) {
   if (!parsed || typeof parsed !== 'object') return null;
-  if (!parsed.sheets || typeof parsed.sheets !== 'object' || Array.isArray(parsed.sheets)) return null;
+  if (!parsed.sheets || typeof parsed.sheets !== 'object' || Array.isArray(parsed.sheets))
+    return null;
   return {
     sheets: parsed.sheets,
     current: parsed.current || Object.keys(parsed.sheets)[0] || '',
     group: parsed.group || '',
     fileName: parsed.fileName || '',
-    loadedAt: parsed.loadedAt || 0
+    loadedAt: parsed.loadedAt || 0,
   };
 }
 
 export async function clearState() {
-  try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* localStorage unavailable */
+  }
   try {
     const db = await openIDB();
     await new Promise((resolve) => {
@@ -127,7 +136,9 @@ export async function clearState() {
       tx.oncomplete = resolve;
       tx.onerror = resolve;
     });
-  } catch {}
+  } catch {
+    /* IDB cleanup failed — non-critical */
+  }
 }
 
 /**

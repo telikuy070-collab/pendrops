@@ -1,0 +1,37 @@
+<div id="adminModal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" data-close="admin"></div>
+  <div class="modal-content admin-content">
+    <div class="modal-header">
+      <h2>👑 Админка</h2>
+      <button class="modal-close" data-close="admin" aria-label="Закрыть">✕</button>
+    </div>
+    <div class="admin-body">
+      <p class="admin-hint">Введите PIN и перетащите Excel-файл расписания</p>
+
+      <div class="admin-step" id="stepPin">
+        <label>PIN</label>
+        <input type="password" inputmode="numeric" maxlength="6" pattern="[0-9]*"
+               id="adminPin" placeholder="••••" autocomplete="off" />
+        <button class="btn primary block" id="adminPinBtn">Войти</button>
+        <div class="admin-error" id="adminError"></div>
+      </div>
+
+      <div class="admin-step hidden" id="stepDrop">
+        <div class="drop-zone" id="adminDrop">
+          <div class="drop-zone-text">
+            <div class="drop-zone-icon">📂</div>
+            <div>Перетащите .xls / .xlsx сюда</div>
+            <div class="drop-zone-sub">или нажмите чтобы выбрать</div>
+          </div>
+          <input type="file" id="adminFile" accept=".xls,.xlsx,.csv" hidden />
+        </div>
+        <div class="admin-picked hidden" id="adminPicked">
+          <div>📄 <span id="adminFileName">—</span></div>
+          <button class="btn ghost small" id="adminReset">Сбросить</button>
+        </div>
+        <button class="btn primary block hidden" id="adminPublish">🚀 Опубликовать</button>
+        <div class="admin-status" id="adminStatus"></div>
+      </div>
+    </div>
+  </div>
+</div>

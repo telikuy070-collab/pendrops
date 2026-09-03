@@ -201,28 +201,6 @@ body {
 }
 .qp-pill:hover .qp-pill-caret { transform: translateY(2px); opacity: .8; }
 
-/* Subgroup chips — компактные, в той же полосе */
-.qp-chips {
-  display: flex; gap: 4px;
-  padding-left: 6px;
-  margin-left: 4px;
-  border-left: 1px solid var(--line);
-}
-.qp-chips[hidden] { display: none; }
-.qp-chip {
-  padding: 5px 12px; border-radius: 999px;
-  background: transparent; border: 1px solid transparent;
-  color: var(--muted);
-  font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
-  transition: all .2s cubic-bezier(.4, 0, .2, 1);
-}
-.qp-chip:hover { background: var(--panel-2); color: var(--text); }
-.qp-chip.active {
-  background: linear-gradient(135deg, #a855f7, #ec4899); color: #fff;
-  box-shadow: 0 4px 14px rgba(168, 85, 247, .45);
-}
-.qp-chip[hidden] { display: none; }
-
 /* Schedule */
 .schedule { margin: 16px 12px 100px; }
 
@@ -579,7 +557,6 @@ body {
   .qp-pill[data-empty="true"] { padding: 7px 12px; font-size: 13px; }
   .qp-pill-value { font-size: 13px; }
   .qp-pill[data-empty="true"] .qp-pill-value { font-size: 14px; }
-  .qp-chip { padding: 4px 10px; font-size: 11px; }
 }
 
 /* Modals */

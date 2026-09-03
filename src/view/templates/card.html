@@ -1,0 +1,20 @@
+<div class="card" data-card-idx="{{idx}}">
+  <div class="card-top">
+    <span class="time">🕒 {{time}}</span>
+    <div class="card-tags">
+      <span class="exam-badge" data-if="isExam">📝 Экзамен</span>
+      <span class="type-pill {{type}}">{{tpLabel}}</span>
+      <span class="state-pill {{stateClass}}" data-if="stateText">{{stateText}}</span>
+    </div>
+  </div>
+  <div class="subject">{{subject}}</div>
+  <div class="row-info">
+    <span class="chip chip-group" data-if="group"><b>Группа:</b> {{group}}<sup data-if="subgroup">({{subgroup}})</sup></span>
+    <span class="chip chip-teacher" data-if="teacher"><b>Преподаватель:</b> {{teacher}}</span>
+    <span class="chip chip-room" data-if="room"><b>Аудитория:</b> {{room}}</span>
+  </div>
+  <div class="card-live" data-if="isNow">
+    <div class="card-live-bar"><div class="card-live-fill"></div></div>
+    <div class="card-live-text">Осталось <b class="countdown">—</b></div>
+  </div>
+</div>
