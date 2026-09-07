@@ -6,14 +6,19 @@
   "private": true,
   "scripts": {
     "dev": "vite",
+    "dev:teacher": "vite --config vite.teacher.config.js",
     "build": "tsc --noEmit && vite build",
+    "build:teacher": "tsc --noEmit -p tsconfig.teacher.json && vite build --config vite.teacher.config.js",
     "preview": "vite preview",
+    "preview:teacher": "vite preview --config vite.teacher.config.js",
     "test": "vitest run",
+    "test:teacher": "vitest run teacher-app/tests",
     "test:watch": "vitest",
     "test:edge": "node tests/edge-cases.js",
     "test:store": "node tests/store-audit.js",
     "test:security": "node tests/security-audit.mjs",
     "typecheck": "tsc --noEmit",
+    "typecheck:teacher": "tsc --noEmit -p tsconfig.teacher.json",
     "lint": "eslint . --fix && prettier --write .",
     "prepare": "husky"
   },
@@ -34,6 +39,7 @@
     "vitest": "^2.1.0"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.115.0",
     "zod": "^4.5.4"
   }
 }
