@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+dist-teacher/
 *.local
 
 # Logs
@@ -30,3 +31,6 @@ Thumbs.db
 # Vite / build cache
 .vite/
 .eslintcache
+
+# Teacher PWA (separate repo: pendrops-Teacher)
+teacher-app/
