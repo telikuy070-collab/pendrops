@@ -36,6 +36,7 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
   private realtimeChannel: ReturnType<SupabaseClient['channel']> | null = null;
   private subscribers: Set<(data: ScheduleData) => void> = new Set();
   private cachedData: ScheduleData | null = null;
+  private realtimeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.client = getSupabaseClient();
@@ -165,25 +166,40 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'lessons' },
-        () => this.handleRealtimeChange()
+        (payload) => {
+          // Ignore initial system event from Supabase realtime connection handshake
+          // payload.eventType can be 'INSERT' | 'UPDATE' | 'DELETE' | 'SYSTEM'
+          if ((payload as any).eventType === 'SYSTEM') return;
+          this.handleRealtimeChange();
+        }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'schedule_version' },
-        () => this.handleRealtimeChange()
+        (payload) => {
+          // Ignore initial system event from Supabase realtime connection handshake
+          if ((payload as any).eventType === 'SYSTEM') return;
+          this.handleRealtimeChange();
+        }
       )
       .subscribe();
   }
 
   private async handleRealtimeChange(): Promise<void> {
-    try {
-      const fresh = await this.loadFull();
-      for (const cb of this.subscribers) {
-        cb(fresh);
-      }
-    } catch (err) {
-      console.error('[Supabase] Realtime refresh failed:', err);
+    // Debounce: Supabase may fire multiple events for a single change
+    if (this.realtimeDebounceTimer) {
+      clearTimeout(this.realtimeDebounceTimer);
     }
+    this.realtimeDebounceTimer = setTimeout(async () => {
+      try {
+        const fresh = await this.loadFull();
+        for (const cb of this.subscribers) {
+          cb(fresh);
+        }
+      } catch (err) {
+        console.error('[Supabase] Realtime refresh failed:', err);
+      }
+    }, 100);
   }
 
   async getVersion(): Promise<{ version: string; updatedAt: string }> {
