@@ -1,5 +1,4 @@
 import { defineConfig } from 'vite';
-import { copyFileSync, existsSync } from 'fs';
 
 /**
  * Vite config for PenDrops PWA.
@@ -13,6 +12,9 @@ import { copyFileSync, existsSync } from 'fs';
  *
  * The app is deploy-target-agnostic: it builds static files to `dist/`.
  * For GitHub Pages, we set `base` to the repo path.
+ * 
+ * All static assets (sw.js, manifest.json, xlsx.full.min.js, icons) 
+ * are in public/ and automatically copied to dist/ by Vite.
  */
 export default defineConfig(({ mode }) => {
   const isProd = mode === 'production';
@@ -60,30 +62,5 @@ export default defineConfig(({ mode }) => {
         // Allow cleaner imports in future
       },
     },
-    plugins: [
-      {
-        name: 'copy-xlsx',
-        closeBundle() {
-          // Copy xlsx.full.min.js to dist root for dynamic loading
-          if (existsSync('xlsx.full.min.js')) {
-            copyFileSync('xlsx.full.min.js', 'dist/xlsx.full.min.js');
-          }
-          // Copy data files if they exist (optional, for legacy fallback)
-          try {
-            if (existsSync('data/schedule.xls')) {
-              copyFileSync('data/schedule.xls', 'dist/data/schedule.xls');
-            }
-            if (existsSync('data/version.json')) {
-              copyFileSync('data/version.json', 'dist/data/version.json');
-            }
-            if (existsSync('data/admin.json')) {
-              copyFileSync('data/admin.json', 'dist/data/admin.json');
-            }
-          } catch {
-            // Data files are optional - loaded from Supabase in production
-          }
-        }
-      }
-    ]
   };
 });
