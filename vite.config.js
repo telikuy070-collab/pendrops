@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { copyFileSync, existsSync } from 'fs';
 
 /**
  * Vite config for PenDrops PWA.
@@ -15,19 +16,19 @@ import { defineConfig } from 'vite';
  */
 export default defineConfig(({ mode }) => {
   const isProd = mode === 'production';
-  const repoName = 'telikuy070-collab/pendrops';
+  const repoName = process.env.GITHUB_REPOSITORY || 'telikuy070-collab/pendrops';
   const [, repoOnly] = repoName.split('/');
 
   return {
     // GitHub Pages serves from /<repo-name>/ subdirectory
-    base: isProd ? `https://telikuy070-collab.github.io/${repoOnly}/` : '/',
+    base: isProd ? `/${repoOnly}/` : '/',
     root: '.',
     publicDir: 'public',
     server: {
       port: 8080,
       open: true,
     },
-     build: {
+    build: {
       outDir: 'dist',
       assetsDir: 'assets',
       sourcemap: !isProd,
@@ -41,6 +42,7 @@ export default defineConfig(({ mode }) => {
           manualChunks: (id) => {
             if (id.includes('node_modules/xlsx')) return 'xlsx';
             if (id.includes('node_modules/zod')) return 'zod';
+            if (id.includes('node_modules/@supabase')) return 'supabase';
           },
           // Hash-based filenames for cache busting
           entryFileNames: 'assets/[name].[hash].js',
@@ -51,12 +53,37 @@ export default defineConfig(({ mode }) => {
     },
     // Environment variables — prefix VITE_ to expose to client
     define: {
-      __APP_VERSION__: JSON.stringify('1.7.0'),
+      __APP_VERSION__: JSON.stringify('1.8.0'),
     },
     resolve: {
       alias: {
         // Allow cleaner imports in future
       },
     },
+    plugins: [
+      {
+        name: 'copy-xlsx',
+        closeBundle() {
+          // Copy xlsx.full.min.js to dist root for dynamic loading
+          if (existsSync('xlsx.full.min.js')) {
+            copyFileSync('xlsx.full.min.js', 'dist/xlsx.full.min.js');
+          }
+          // Copy data files if they exist (optional, for legacy fallback)
+          try {
+            if (existsSync('data/schedule.xls')) {
+              copyFileSync('data/schedule.xls', 'dist/data/schedule.xls');
+            }
+            if (existsSync('data/version.json')) {
+              copyFileSync('data/version.json', 'dist/data/version.json');
+            }
+            if (existsSync('data/admin.json')) {
+              copyFileSync('data/admin.json', 'dist/data/admin.json');
+            }
+          } catch {
+            // Data files are optional - loaded from Supabase in production
+          }
+        }
+      }
+    ]
   };
 });

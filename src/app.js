@@ -582,7 +582,7 @@ function initRemoteSync() {
   });
 }
 
-function initBrandGesture() {
+export function initBrandGesture(authService, adminService, toast) {
   const brand = document.querySelector('.brand');
   if (!brand) return;
   let pressTimer = null;
@@ -613,7 +613,8 @@ function initBrandGesture() {
       if (pressing) {
         pressing = false;
         hideHint();
-        admin.show();
+        // Use adminService to show admin panel
+        adminService.show();
         if (navigator.vibrate) navigator.vibrate(30);
       }
     }, LONG_PRESS_MS);
@@ -635,11 +636,16 @@ function initBrandGesture() {
     resetTimer = setTimeout(() => {
       clickCount = 0;
     }, 1200);
-    if (clickCount >= 3) {
+    if (clickCount >= 10) {
       clickCount = 0;
-      brand.classList.add('celebrate');
-      setTimeout(() => brand.classList.remove('celebrate'), 1000);
-      fireConfetti(40);
+      // Verify PIN before showing admin
+      const pin = prompt('Введите PIN для доступа к админке:');
+      if (pin && authService.verifyPin(pin)) {
+        adminService.show();
+        toast.show('Админка разблокирована', 'ok');
+      } else if (pin) {
+        toast.show('Неверный PIN', 'bad');
+      }
     }
   });
 }

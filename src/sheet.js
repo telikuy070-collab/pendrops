@@ -10,7 +10,7 @@ const HEADER_DAY_RE = /апта\s*күндөрү/i;
  * @typedef {{ col: number, code: string, subgroup: string, raw: string }} GroupRef
  * @typedef {{ dayCol: number, paraCol: number, timeCol: number, groups: GroupRef[], headerRow: number }} Block
  * @typedef {{ day: string, time: string, para: string, group: string, subgroup: string,
- *             subject: string, type: string, teacher: string, room: string }} Lesson
+ *             subject: string, type: string, teacher: string, room: string, isExam: boolean }} Lesson
  */
 
 const cellAt = (rows, r, c) => {
