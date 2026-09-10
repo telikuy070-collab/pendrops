@@ -98,6 +98,14 @@ export const subgroups = computed(() => {
   return group?.subgroups || [];
 });
 
+/** Parse "ПСТ-1-25 (1)" → { code: "ПСТ-1-25", subgroup: "1" } */
+function parseGroupSelection(selected: string): { code: string; subgroup: string | null } {
+  if (!selected) return { code: '', subgroup: null };
+  const match = selected.match(/^(.+?)\s*\((\d+)\)$/);
+  if (match) return { code: match[1]!, subgroup: match[2]! };
+  return { code: selected, subgroup: null };
+}
+
 export const filteredLessons = computed(() => {
   const allLessons = lessons.value;
   const prefs = appStore.get('preferences').value;
@@ -108,8 +116,12 @@ export const filteredLessons = computed(() => {
   if (prefs.currentSheetId) {
     result = result.filter(l => l.sheetId === prefs.currentSheetId);
   }
-  if (prefs.currentGroup) {
-    result = result.filter(l => l.group === prefs.currentGroup);
+  const currentGroup = prefs.currentGroup; // narrow type
+  if (currentGroup) {
+    const { code, subgroup } = parseGroupSelection(currentGroup);
+    if (code) {
+      result = result.filter(l => l.group === code && (subgroup === null || l.subgroup === subgroup));
+    }
   }
   if (prefs.activeSubgroup) {
     result = result.filter(l => l.subgroup === prefs.activeSubgroup);
