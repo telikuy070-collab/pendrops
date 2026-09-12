@@ -55,7 +55,7 @@ export default defineConfig(({ mode }) => {
     },
     // Environment variables — prefix VITE_ to expose to client
     define: {
-      __APP_VERSION__: JSON.stringify('1.8.0'),
+      __APP_VERSION__: JSON.stringify('1.8.1'),
     },
     resolve: {
       alias: {
