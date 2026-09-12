@@ -1,6 +1,6 @@
 /**
  * PIN-based Auth Provider - Simple admin verification
- * Uses Supabase for secure PIN storage (hashed)
+ * Uses Supabase Edge Function for secure PIN verification (hash never leaves server)
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { IAuthProvider } from '@core/domain/repositories/ports';
@@ -9,37 +9,37 @@ import { getSupabaseClient } from './client';
 export class SupabaseAuthProvider implements IAuthProvider {
   private client: SupabaseClient;
   private adminVerified = false;
-  private pinHash: string | null = null;
+  private verifying = false; // guard against concurrent verification requests
 
   constructor() {
     this.client = getSupabaseClient();
   }
 
   async verifyPin(pin: string): Promise<boolean> {
-    // Load PIN hash from database (secure, not in client code)
-    if (!this.pinHash) {
-      const { data, error } = await this.client
-        .from('admin_config')
-        .select('pin_hash')
-        .eq('key', 'admin_pin')
-        .single();
+    // Guard: prevent concurrent verification requests
+    if (this.verifying) return false;
+    this.verifying = true;
 
-      if (error || !data) {
-        // Fallback to env for development
-        const envPin = import.meta.env.VITE_ADMIN_PIN;
-        this.pinHash = envPin ? await this.hashPin(envPin) : null;
-      } else {
-        this.pinHash = data.pin_hash;
+    try {
+      const { data, error } = await this.client.functions.invoke('verify-pin', {
+        body: { pin },
+      });
+
+      if (error) {
+        console.error('[auth] verify-pin failed:', error);
+        return false;
       }
+
+      const valid = data?.valid === true;
+      if (valid) this.adminVerified = true;
+      return valid;
+
+    } catch (err) {
+      console.error('[auth] verifyPin error:', err);
+      return false;
+    } finally {
+      this.verifying = false;
     }
-
-    if (!this.pinHash) return false;
-
-    const inputHash = await this.hashPin(pin);
-    const valid = inputHash === this.pinHash;
-    
-    if (valid) this.adminVerified = true;
-    return valid;
   }
 
   isAdmin(): boolean {
@@ -48,14 +48,8 @@ export class SupabaseAuthProvider implements IAuthProvider {
 
   async getSession() {
     // Not using Supabase Auth, but return admin status
-    return this.adminVerified ? { user: { id: 'admin', role: 'admin' }, accessToken: 'pin-verified' } : null;
-  }
-
-  private async hashPin(pin: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(pin + 'pendrops-salt-2026');
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return this.adminVerified
+      ? { user: { id: 'admin', role: 'admin' }, accessToken: 'pin-verified' }
+      : null;
   }
 }

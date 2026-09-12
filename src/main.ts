@@ -10,7 +10,7 @@ import { SupabaseScheduleRepository } from '@infrastructure/supabase/repository'
 import { SupabaseAuthProvider } from '@infrastructure/supabase/auth';
 import { HybridStorage } from '@infrastructure/storage/hybrid';
 import { ExcelFileParser } from '@infrastructure/github/parser';
-import { appStore, actions } from '@presentation/stores/appStore';
+import { appStore, actions, filteredLessons } from '@presentation/stores/appStore';
 import { createToast } from './view/toast.js';
 import { createScheduleView } from './view/scheduleView.js';
 import { createAdminView } from './view/adminView.js';
@@ -108,7 +108,7 @@ function initializeUI(
   // Bind store to view
   appStore.subscribe((state) => {
     if (state.schedule) {
-      scheduleView.render(state.filteredLessons, { today: state.ui.loading ? '' : todayName.value });
+      scheduleView.render(filteredLessons.value, { today: state.ui.loading ? '' : todayName.value });
     }
     // Update pill values
     if (sheetValue) sheetValue.textContent = state.preferences.currentSheetId || '—';
