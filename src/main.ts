@@ -101,16 +101,19 @@ function initializeUI(
   const sheetValue = document.getElementById('sheetValue');
   const groupValue = document.getElementById('groupValue');
   const subgroupValue = document.getElementById('subgroupValue');
+  const quickPick = document.getElementById('quickPick');
   
   // Bind store to view
   appStore.subscribe((state) => {
     if (state.schedule) {
       scheduleView.render(filteredLessons.value, { today: state.ui.loading ? '' : todayName.value });
+      // Show quickPick selectors when schedule is loaded
+      if (quickPick) quickPick.classList.remove('hidden');
     }
     // Update pill values
     if (sheetValue) sheetValue.textContent = state.preferences.currentSheetId || '—';
     if (groupValue) groupValue.textContent = state.preferences.currentGroup || '—';
-    if (subgroupValue) subgroupValue.textContent = state.preferences.activeSubgroup || '—';
+    if (subgroupValue) subgroupValue.textContent = state.preferences.activeSubgroup || 'Все';
   });
 
   // Initialize brand gesture (10-tap for admin)
