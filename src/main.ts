@@ -15,7 +15,6 @@ import { createToast } from './view/toast.js';
 import { createScheduleView } from './view/scheduleView.js';
 import { createAdminView } from './view/adminView.js';
 import { initBrandGesture } from '@presentation/gestures/brandGesture';
-import { registerSW } from '@presentation/swRegistration';
 import { escapeHtml } from './text.js';
 import { todayName } from '@presentation/stores/appStore';
 import type { PreferencesService as PrefsServiceType } from '@core/application/services';
@@ -75,9 +74,7 @@ export async function bootstrap(): Promise<void> {
     actions.setLoading(false);
   }
   
-  // Register service worker
-  registerSW();
-}
+  }
 
 let toast: ReturnType<typeof createToast>;
 
