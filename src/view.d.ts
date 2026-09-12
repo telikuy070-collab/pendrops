@@ -9,10 +9,14 @@ export function createScheduleView(container: HTMLElement | null): {
   setOnRefresh(handler: () => Promise<void>): void;
 };
 
-export function createAdminView(): {
+export function createAdminView(
+  authService: { verifyPin(pin: string): Promise<boolean> },
+  adminService: { publishFromExcel(file: File): Promise<void> },
+  toast?: { show(msg: string, type?: string): void }
+): {
   show(): void;
   hide(): void;
-  onPublish(callback: (file: File) => Promise<void>): void;
+  isOpen(): boolean;
 };
 
 export function initBrandGesture(

@@ -98,7 +98,7 @@ function initializeUI(
   const scheduleView = createScheduleView(container);
   
   // Create admin view for brand gesture
-  const adminView = createAdminView();
+  const adminView = createAdminView(authService, adminService, toast);
   
   // Cache pill value elements
   const sheetValue = document.getElementById('sheetValue');

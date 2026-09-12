@@ -256,10 +256,11 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
     if (versionError) throw versionError;
   }
 
-  async publishFromWorkbook(workbook: { SheetNames: string[]; Sheets: Record<string, any> }, xlsx: any): Promise<void> {
-    // Reuse existing sheet parser
+  async publishFromWorkbook(workbook: { SheetNames: string[]; Sheets: Record<string, any> }): Promise<void> {
+    // Reuse existing sheet parser, load xlsx internally
     const { parseWorkbook } = await import('../../sheet');
-    const sheets = parseWorkbook(workbook, xlsx);
+    const XLSX = await this.loadXLSX();
+    const sheets = parseWorkbook(workbook, XLSX);
     
     const lessons: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[] = [];
     const now = new Date().toISOString();
@@ -292,5 +293,18 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
     }
 
     await this.publish(lessons);
+  }
+
+  private async loadXLSX(): Promise<any> {
+    if ((window as any).XLSX) return (window as any).XLSX;
+    
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'xlsx.full.min.js';
+      script.async = true;
+      script.onload = () => (window as any).XLSX ? resolve((window as any).XLSX) : reject(new Error('XLSX not loaded'));
+      script.onerror = () => reject(new Error('Failed to load xlsx.full.min.js'));
+      document.head.appendChild(script);
+    });
   }
 }

@@ -1,10 +1,18 @@
 /**
- * UI админки PenDrops.
+ * UI админки PenDrops — новая архитектура (Supabase).
  * Модалка: PIN → drop zone → статус → кнопка Опубликовать.
+ * @typedef {import('@core/application/services').AuthService} AuthService
+ * @typedef {import('@core/application/services').AdminService} AdminService
+ * @typedef {{show: function(string, string): void}} Toast
  */
-import { publishSchedule, isAdminConfigured, verifyPin } from '../admin.js';
 
-export function createAdminView() {
+/**
+ * @param {AuthService} authService
+ * @param {AdminService} adminService
+ * @param {Toast} [toast]
+ * @returns {{show: function(): void, close: function(): void, isOpen: function(): boolean}}
+ */
+export function createAdminView(authService, adminService, toast) {
   let open = false;
   let pickedFile = null;
 
@@ -75,25 +83,26 @@ export function createAdminView() {
     setTimeout(() => errEl.classList.add('hidden'), 4000);
   };
 
-  pinBtn.addEventListener('click', () => {
+  pinBtn.addEventListener('click', async () => {
     const v = pin.value.trim();
     if (!v) {
       showError('Введите PIN');
       return;
     }
-    if (!verifyPin(v)) {
-      showError('Неверный PIN');
-      pin.value = '';
+    try {
+      const ok = await authService.verifyPin(v);
+      if (!ok) {
+        showError('Неверный PIN');
+        pin.value = '';
+        return;
+      }
+    } catch (e) {
+      showError('Ошибка проверки PIN');
       return;
     }
     stepPin.classList.add('hidden');
     stepDrop.classList.remove('hidden');
-    status.textContent = '⏳ Проверяю настройки...';
-    isAdminConfigured().then((ok) => {
-      status.textContent = ok
-        ? '✅ Токен найден, готов к публикации'
-        : '⚠️ admin.json не найден в репо. См. README.';
-    });
+    status.textContent = '✅ PIN верен, загрузите файл';
   });
   pin.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') pinBtn.click();
@@ -131,14 +140,17 @@ export function createAdminView() {
   publish.addEventListener('click', async () => {
     if (!pickedFile) return;
     publish.disabled = true;
-    status.innerHTML = '⏳ Загружаю в GitHub...';
+    status.innerHTML = '⏳ Публикую в Supabase...';
     try {
-      const r = await publishSchedule(pickedFile);
-      status.innerHTML = `✅ Опубликовано! <b>${r.version}</b> · ${r.datestamp}<br><span class="admin-sub">Ученики получат через 1-2 мин</span>`;
+      await adminService.publishFromExcel(pickedFile);
+      toast?.show?.('Расписание опубликовано', 'ok');
+      status.innerHTML = '✅ Опубликовано в Supabase!<br><span class="admin-sub">Ученики увидят через 1-2 мин (realtime)</span>';
       publish.classList.add('hidden');
       picked.classList.add('hidden');
     } catch (err) {
+      console.error('[Admin] Publish failed:', err);
       status.innerHTML = '❌ ' + (err.message || String(err));
+      toast?.show?.('Ошибка публикации: ' + (err.message || String(err)), 'bad');
     } finally {
       publish.disabled = false;
     }
