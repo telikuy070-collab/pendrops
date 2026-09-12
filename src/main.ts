@@ -117,6 +117,16 @@ function initializeUI(
     if (sheetValue) sheetValue.textContent = state.preferences.currentSheetId || '—';
     if (groupValue) groupValue.textContent = state.preferences.currentGroup || '—';
     if (subgroupValue) subgroupValue.textContent = state.preferences.activeSubgroup || 'Все';
+    
+    // Show/hide modals based on activeModal state
+    const modals = ['sheetModal', 'groupModal', 'subgroupModal', 'settingsModal'];
+    modals.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        const shouldShow = state.ui.activeModal === id.replace('Modal', '');
+        el.classList.toggle('hidden', !shouldShow);
+      }
+    });
   });
 
   // Initialize brand gesture (10-tap for admin)
