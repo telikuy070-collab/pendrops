@@ -642,9 +642,9 @@ export function initBrandGesture(authService, adminService, toast) {
       const pin = prompt('Введите PIN для доступа к админке:');
       if (pin && authService.verifyPin(pin)) {
         adminService.show();
-        toast.show('Админка разблокирована', 'ok');
+        toast?.show?.('Админка разблокирована', 'ok');
       } else if (pin) {
-        toast.show('Неверный PIN', 'bad');
+        toast?.show?.('Неверный PIN', 'bad');
       }
     }
   });

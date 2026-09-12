@@ -96,11 +96,20 @@ function initializeUI(
   // Initialize schedule view
   const scheduleView = createScheduleView(container);
   
+  // Cache pill value elements
+  const sheetValue = document.getElementById('sheetValue');
+  const groupValue = document.getElementById('groupValue');
+  const subgroupValue = document.getElementById('subgroupValue');
+  
   // Bind store to view
   appStore.subscribe((state) => {
     if (state.schedule) {
       scheduleView.render(state.filteredLessons, { today: state.ui.loading ? '' : todayName.value });
     }
+    // Update pill values
+    if (sheetValue) sheetValue.textContent = state.preferences.currentSheetId || '—';
+    if (groupValue) groupValue.textContent = state.preferences.currentGroup || '—';
+    if (subgroupValue) subgroupValue.textContent = state.preferences.activeSubgroup || '—';
   });
 
   // Initialize brand gesture (10-tap for admin)
