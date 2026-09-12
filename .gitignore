@@ -16,6 +16,11 @@ yarn-error.log*
 *.xls
 *.xlsx
 
+# Data files (generated, not committed)
+data/admin.json
+data/schedule.xls
+data/version.json
+
 # Environment
 .env
 .env.local

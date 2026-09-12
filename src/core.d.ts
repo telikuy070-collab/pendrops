@@ -31,7 +31,3 @@ export function saveState(state: any): Promise<'ls' | 'idb' | 'none'>;
 export function clearState(): Promise<void>;
 export function saveHandle(name: string, handle: any): Promise<boolean>;
 export function loadHandle(name: string): Promise<any | null>;
-
-// admin.js
-export function decryptPAT(encrypted: string, pin: string): Promise<string>;
-export function publishToGitHub(file: File, pat: string): Promise<void>;
