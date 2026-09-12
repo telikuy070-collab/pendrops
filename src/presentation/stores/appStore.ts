@@ -113,28 +113,43 @@ export const filteredLessons = computed(() => {
   
   let result = allLessons;
   
+  // Filter by sheet (department)
   if (prefs.currentSheetId) {
     result = result.filter(l => l.sheetId === prefs.currentSheetId);
   }
-  const currentGroup = prefs.currentGroup; // narrow type
-  if (currentGroup) {
-    const { code, subgroup } = parseGroupSelection(currentGroup);
-    if (code) {
-      result = result.filter(l => l.group === code && (subgroup === null || l.subgroup === subgroup));
-    }
+  
+  // Filter by group (currentGroup stores just the group code, e.g., "ПСТ-1-25")
+  if (prefs.currentGroup) {
+    result = result.filter(l => l.group === prefs.currentGroup);
   }
+  
+  // Filter by subgroup (activeSubgroup stores just the subgroup, e.g., "1")
   if (prefs.activeSubgroup) {
-    result = result.filter(l => l.subgroup === prefs.activeSubgroup);
+    result = result.filter(l => String(l.subgroup) === String(prefs.activeSubgroup));
   }
+  
+  // Filter by day
   if (filters.day) {
     result = result.filter(l => l.day === filters.day);
   }
+  
+  // Filter by search
   if (filters.search) {
     const q = filters.search.toLowerCase();
     result = result.filter(l =>
       `${l.day} ${l.time} ${l.group} ${l.subject} ${l.teacher} ${l.room}`.toLowerCase().includes(q)
     );
   }
+  
+  // Debug logging
+  console.log('[filter]', {
+    sheet: prefs.currentSheetId,
+    group: prefs.currentGroup,
+    subgroup: prefs.activeSubgroup,
+    total: allLessons.length,
+    filtered: result.length,
+    first: result[0],
+  });
   
   return result;
 });

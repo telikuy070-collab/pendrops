@@ -105,6 +105,9 @@ function initializeUI(
   
   // Bind store to view
   appStore.subscribe((state) => {
+    console.log('[ui] subscribe triggered, prefs:', state.preferences);
+    console.log('[ui] filtered lessons:', filteredLessons.value?.length);
+    
     if (state.schedule) {
       scheduleView.render(filteredLessons.value, { today: state.ui.loading ? '' : todayName.value });
       // Show quickPick selectors when schedule is loaded
@@ -225,6 +228,7 @@ function renderSheetPicker(prefsService: PrefsServiceType): void {
   sheetList.querySelectorAll('.picker-item').forEach(btn => {
     btn.addEventListener('click', async () => {
       const sheetId = (btn as HTMLElement).dataset.sheet!;
+      console.log('[picker] sheet selected:', sheetId);
       actions.setPreference('currentSheetId', sheetId);
       actions.setPreference('currentGroup', '');
       actions.setPreference('activeSubgroup', '');
@@ -253,10 +257,10 @@ function renderGroupPicker(prefsService: PrefsServiceType): void {
   groupList.querySelectorAll('.picker-item').forEach(btn => {
     btn.addEventListener('click', async () => {
       const groupCode = (btn as HTMLElement).dataset.group!;
-      const wasDifferent = groupCode !== prefs.currentGroup;
+      console.log('[picker] group selected:', groupCode);
       actions.setPreference('currentGroup', groupCode);
-      if (wasDifferent) actions.setPreference('activeSubgroup', '');
-      await prefsService.save({ currentGroup: groupCode, activeSubgroup: wasDifferent ? '' : prefs.activeSubgroup });
+      actions.setPreference('activeSubgroup', '');
+      await prefsService.save({ currentGroup: groupCode, activeSubgroup: '' });
       actions.closeModal();
     });
   });
@@ -294,6 +298,7 @@ function renderSubgroupPicker(prefsService: PrefsServiceType): void {
   subgroupList.querySelectorAll('.picker-item').forEach(btn => {
     btn.addEventListener('click', async () => {
       const subgroup = (btn as HTMLElement).dataset.subgroup!;
+      console.log('[picker] subgroup selected:', subgroup);
       actions.setPreference('activeSubgroup', subgroup);
       await prefsService.save({ activeSubgroup: subgroup });
       actions.closeModal();
