@@ -5,7 +5,8 @@ export async function registerSW(): Promise<void> {
   if (!('serviceWorker' in navigator)) return;
 
   try {
-    const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    const base = import.meta.env.BASE_URL || '/';
+    const registration = await navigator.serviceWorker.register(`${base}sw.js`, { scope: base });
     
     // Check for updates on load
     registration.update().catch(() => {});

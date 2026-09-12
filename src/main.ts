@@ -33,6 +33,9 @@ export async function bootstrap(): Promise<void> {
   const authService = new AuthService(auth);
   const adminService = new AdminService(repository, parser);
 
+  // Initialize UI FIRST (so toast exists before any async callbacks)
+  initializeUI(scheduleService, prefsService, authService, adminService);
+  
   // Load initial data
   actions.setLoading(true);
   
@@ -53,7 +56,7 @@ export async function bootstrap(): Promise<void> {
       actions.setSchedule(data);
       // Show toast for updates (but not initial load)
       if (!initialLoad) {
-        toast.show('Расписание обновлено', 'ok');
+        toast?.show('Расписание обновлено', 'ok');
       }
       initialLoad = false;
     });
@@ -70,9 +73,6 @@ export async function bootstrap(): Promise<void> {
   } finally {
     actions.setLoading(false);
   }
-
-  // Initialize UI
-  initializeUI(scheduleService, prefsService, authService, adminService);
   
   // Register service worker
   registerSW();
@@ -289,16 +289,16 @@ function renderSubgroupPicker(prefsService: PrefsServiceType): void {
 }
 
 async function handlePullRefresh(scheduleService: ScheduleService): Promise<void> {
-  toast.show('Проверяю обновления...', 'ok');
+  toast?.show('Проверяю обновления...', 'ok');
   const currentVersion = appStore.get('schedule').value?.version || '';
   const { hasUpdate } = await scheduleService.checkUpdates(currentVersion);
   
   if (hasUpdate) {
     const schedule = await scheduleService.load();
     actions.setSchedule(schedule);
-    toast.show('Расписание обновлено', 'ok');
+    toast?.show('Расписание обновлено', 'ok');
   } else {
-    toast.show('Обновлений нет', 'ok');
+    toast?.show('Обновлений нет', 'ok');
   }
 }
 
