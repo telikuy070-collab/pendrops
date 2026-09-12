@@ -798,9 +798,3 @@ function initInstallPrompt() {
     }
   }, 30000);
 }
-
-try {
-  init();
-} catch (e) {
-  reportError(e);
-}

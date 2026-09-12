@@ -13,7 +13,8 @@ import { ExcelFileParser } from '@infrastructure/github/parser';
 import { appStore, actions } from '@presentation/stores/appStore';
 import { createToast } from './view/toast.js';
 import { createScheduleView } from './view/scheduleView.js';
-import { initBrandGesture } from './app.js';
+import { createAdminView } from './view/adminView.js';
+import { initBrandGesture } from '@presentation/gestures/brandGesture';
 import { registerSW } from '@presentation/swRegistration';
 import { escapeHtml } from './text.js';
 import { todayName } from '@presentation/stores/appStore';
@@ -96,6 +97,9 @@ function initializeUI(
   // Initialize schedule view
   const scheduleView = createScheduleView(container);
   
+  // Create admin view for brand gesture
+  const adminView = createAdminView();
+  
   // Cache pill value elements
   const sheetValue = document.getElementById('sheetValue');
   const groupValue = document.getElementById('groupValue');
@@ -113,7 +117,7 @@ function initializeUI(
   });
 
   // Initialize brand gesture (10-tap for admin)
-  initBrandGesture(authService, adminService, toast);
+  initBrandGesture({ authService, adminView, toast });
 
   // Bind UI events
   bindEvents(scheduleService, prefsService, authService, adminService);
