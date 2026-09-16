@@ -33,7 +33,6 @@ export class SupabaseAuthProvider implements IAuthProvider {
       const valid = data?.valid === true;
       if (valid) this.adminVerified = true;
       return valid;
-
     } catch (err) {
       console.error('[auth] verifyPin error:', err);
       return false;

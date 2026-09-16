@@ -4,7 +4,8 @@
  */
 
 /** Day of week in Russian */
-export type DayName = 'Понедельник' | 'Вторник' | 'Среда' | 'Четверг' | 'Пятница' | 'Суббота' | 'Воскресенье';
+export type DayName =
+  'Понедельник' | 'Вторник' | 'Среда' | 'Четверг' | 'Пятница' | 'Суббота' | 'Воскресенье';
 
 /** Lesson type */
 export type LessonType = 'lecture' | 'practice' | 'lab' | 'exam' | 'consultation';
@@ -12,20 +13,20 @@ export type LessonType = 'lecture' | 'practice' | 'lab' | 'exam' | 'consultation
 /** Lesson entity - core domain object */
 export interface Lesson {
   id: string;
-  sheetId: string;          // Which sheet/department (e.g., "Лечебное дело")
+  sheetId: string; // Which sheet/department (e.g., "Лечебное дело")
   day: DayName;
-  dayOrder: number;         // 0-6 for sorting
-  time: string;             // "08:30-10:05"
-  para: string;             // "1", "2", etc.
-  group: string;            // Group code (e.g., "ЛД-11")
-  subgroup: string;         // "1", "2", or ""
+  dayOrder: number; // 0-6 for sorting
+  time: string; // "08:30-10:05"
+  para: string; // "1", "2", etc.
+  group: string; // Group code (e.g., "ЛД-11")
+  subgroup: string; // "1", "2", or ""
   subject: string;
   type: LessonType;
   teacher: string;
   room: string;
   isExam: boolean;
-  createdAt: string;        // ISO timestamp
-  updatedAt: string;        // ISO timestamp
+  createdAt: string; // ISO timestamp
+  updatedAt: string; // ISO timestamp
 }
 
 /** Sheet/Department entity */
@@ -66,13 +67,13 @@ export interface ScheduleData {
 export interface IScheduleRepository {
   /** Load full schedule for offline-first UX */
   loadFull(): Promise<ScheduleData>;
-  
+
   /** Subscribe to realtime changes */
   subscribe(callback: (data: ScheduleData) => void): () => void;
-  
+
   /** Get current version for update checks */
   getVersion(): Promise<{ version: string; updatedAt: string }>;
-  
+
   /** Admin: publish new schedule (replace all) */
   publish(schedule: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[]): Promise<void>;
 }

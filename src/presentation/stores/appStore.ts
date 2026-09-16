@@ -2,7 +2,14 @@
  * Application Store - Central reactive state for the entire app
  * Combines schedule data, user preferences, and UI state
  */
-import type { ScheduleData, Lesson, Sheet, Group, UserPreferences, DayName } from '@core/domain/entities/types';
+import type {
+  ScheduleData,
+  Lesson,
+  Sheet,
+  Group,
+  UserPreferences,
+  DayName,
+} from '@core/domain/entities/types';
 import { createStore, signal, computed, type Store, type Signal, type Computed } from './signals';
 
 export interface AppState {
@@ -31,16 +38,16 @@ const initialState: AppState = {
     loading: true,
     error: null,
     showInstallPrompt: false,
-    activeModal: null
+    activeModal: null,
   },
   preferences: {
     currentSheetId: '',
     currentGroup: '',
     activeSubgroup: '',
-    hiddenSheets: []
+    hiddenSheets: [],
   },
   isAdmin: false,
-  updateAvailable: null
+  updateAvailable: null,
 };
 
 export const appStore = createStore<AppState>(initialState);
@@ -64,33 +71,40 @@ export const groups = computed(() => {
   if (!sched || !prefs.currentSheetId) return [];
   const sheetLessons = sched.sheets.get(prefs.currentSheetId) || [];
   const groupMap = new Map<string, { code: string; count: number; subgroups: Set<string> }>();
-  
+
   for (const lesson of sheetLessons) {
     const existing = groupMap.get(lesson.group);
     if (!existing) {
-      groupMap.set(lesson.group, { code: lesson.group, count: 1, subgroups: new Set([lesson.subgroup].filter(Boolean)) });
+      groupMap.set(lesson.group, {
+        code: lesson.group,
+        count: 1,
+        subgroups: new Set([lesson.subgroup].filter(Boolean)),
+      });
     } else {
       existing.count++;
       if (lesson.subgroup) existing.subgroups.add(lesson.subgroup);
     }
   }
-  
-  return Array.from(groupMap.entries())
-    .map(([code, meta]) => ({ code, count: meta.count, subgroups: Array.from(meta.subgroups).sort() }));
+
+  return Array.from(groupMap.entries()).map(([code, meta]) => ({
+    code,
+    count: meta.count,
+    subgroups: Array.from(meta.subgroups).sort(),
+  }));
 });
 
 export const currentSheet = computed(() => {
   const sched = scheduleData.value;
   const prefs = appStore.get('preferences').value;
   if (!sched || !prefs.currentSheetId) return null;
-  return sched.sheetsMeta.find(s => s.id === prefs.currentSheetId) || null;
+  return sched.sheetsMeta.find((s) => s.id === prefs.currentSheetId) || null;
 });
 
 export const currentGroup = computed(() => {
   const prefs = appStore.get('preferences').value;
   const groupsList = groups.value;
   if (!prefs.currentGroup) return null;
-  return groupsList.find(g => g.code === prefs.currentGroup) || null;
+  return groupsList.find((g) => g.code === prefs.currentGroup) || null;
 });
 
 export const subgroups = computed(() => {
@@ -110,37 +124,37 @@ export const filteredLessons = computed(() => {
   const allLessons = lessons.value;
   const prefs = appStore.get('preferences').value;
   const filters = appStore.get('currentFilters').value;
-  
+
   let result = allLessons;
-  
+
   // Filter by sheet (department)
   if (prefs.currentSheetId) {
-    result = result.filter(l => l.sheetId === prefs.currentSheetId);
+    result = result.filter((l) => l.sheetId === prefs.currentSheetId);
   }
-  
+
   // Filter by group (currentGroup stores just the group code, e.g., "ПСТ-1-25")
   if (prefs.currentGroup) {
-    result = result.filter(l => l.group === prefs.currentGroup);
+    result = result.filter((l) => l.group === prefs.currentGroup);
   }
-  
+
   // Filter by subgroup (activeSubgroup stores just the subgroup, e.g., "1")
   if (prefs.activeSubgroup) {
-    result = result.filter(l => String(l.subgroup) === String(prefs.activeSubgroup));
+    result = result.filter((l) => String(l.subgroup) === String(prefs.activeSubgroup));
   }
-  
+
   // Filter by day
   if (filters.day) {
-    result = result.filter(l => l.day === filters.day);
+    result = result.filter((l) => l.day === filters.day);
   }
-  
+
   // Filter by search
   if (filters.search) {
     const q = filters.search.toLowerCase();
-    result = result.filter(l =>
+    result = result.filter((l) =>
       `${l.day} ${l.time} ${l.group} ${l.subject} ${l.teacher} ${l.room}`.toLowerCase().includes(q)
     );
   }
-  
+
   // Debug logging
   console.log('[filter]', {
     sheet: prefs.currentSheetId,
@@ -150,15 +164,23 @@ export const filteredLessons = computed(() => {
     filtered: result.length,
     first: result[0],
   });
-  
+
   return result;
 });
 
 export const days = computed(() => {
   const lessonList = filteredLessons.value;
-  const daySet = new Set<DayName>(lessonList.map(l => l.day));
-  const DAY_ORDER: DayName[] = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
-  return DAY_ORDER.filter(d => daySet.has(d));
+  const daySet = new Set<DayName>(lessonList.map((l) => l.day));
+  const DAY_ORDER: DayName[] = [
+    'Понедельник',
+    'Вторник',
+    'Среда',
+    'Четверг',
+    'Пятница',
+    'Суббота',
+    'Воскресенье',
+  ];
+  return DAY_ORDER.filter((d) => daySet.has(d));
 });
 
 export const todayName = computed(() => {
@@ -181,27 +203,30 @@ export const actions = {
   },
 
   setPreference<K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) {
-    appStore.set('preferences', prev => ({ ...prev, [key]: value }));
+    appStore.set('preferences', (prev) => ({ ...prev, [key]: value }));
   },
 
-  setFilter<K extends keyof AppState['currentFilters']>(key: K, value: AppState['currentFilters'][K]) {
-    appStore.set('currentFilters', prev => ({ ...prev, [key]: value }));
+  setFilter<K extends keyof AppState['currentFilters']>(
+    key: K,
+    value: AppState['currentFilters'][K]
+  ) {
+    appStore.set('currentFilters', (prev) => ({ ...prev, [key]: value }));
   },
 
   setLoading(loading: boolean) {
-    appStore.set('ui', prev => ({ ...prev, loading }));
+    appStore.set('ui', (prev) => ({ ...prev, loading }));
   },
 
   setError(error: string | null) {
-    appStore.set('ui', prev => ({ ...prev, error }));
+    appStore.set('ui', (prev) => ({ ...prev, error }));
   },
 
   openModal(modal: string) {
-    appStore.set('ui', prev => ({ ...prev, activeModal: modal }));
+    appStore.set('ui', (prev) => ({ ...prev, activeModal: modal }));
   },
 
   closeModal() {
-    appStore.set('ui', prev => ({ ...prev, activeModal: null }));
+    appStore.set('ui', (prev) => ({ ...prev, activeModal: null }));
   },
 
   setAdmin(isAdmin: boolean) {
@@ -214,5 +239,5 @@ export const actions = {
 
   resetFilters() {
     appStore.set('currentFilters', { day: '', search: '' });
-  }
+  },
 };

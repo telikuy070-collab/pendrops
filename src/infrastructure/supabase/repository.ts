@@ -64,7 +64,10 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
   private transformRows(rows: LessonRow[], versionData: VersionRow | null): ScheduleData {
     const sheets = new Map<string, Lesson[]>();
     const sheetsMetaMap = new Map<string, { name: string; lessonCount: number; order: number }>();
-    const groupsMap = new Map<string, { code: string; sheetId: string; subgroups: Set<string>; count: number }>();
+    const groupsMap = new Map<
+      string,
+      { code: string; sheetId: string; subgroups: Set<string>; count: number }
+    >();
 
     for (const row of rows) {
       const lesson: Lesson = {
@@ -82,13 +85,17 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
         room: row.room || '',
         isExam: row.is_exam,
         createdAt: row.created_at,
-        updatedAt: row.updated_at
+        updatedAt: row.updated_at,
       };
 
       // Group by sheet
       if (!sheets.has(row.sheet_id)) {
         sheets.set(row.sheet_id, []);
-        sheetsMetaMap.set(row.sheet_id, { name: row.sheet_id, lessonCount: 0, order: row.day_order });
+        sheetsMetaMap.set(row.sheet_id, {
+          name: row.sheet_id,
+          lessonCount: 0,
+          order: row.day_order,
+        });
       }
       sheets.get(row.sheet_id)!.push(lesson);
       sheetsMetaMap.get(row.sheet_id)!.lessonCount++;
@@ -96,7 +103,12 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
       // Track groups
       const groupKey = `${row.sheet_id}:${row.group_code}`;
       if (!groupsMap.has(groupKey)) {
-        groupsMap.set(groupKey, { code: row.group_code, sheetId: row.sheet_id, subgroups: new Set(), count: 0 });
+        groupsMap.set(groupKey, {
+          code: row.group_code,
+          sheetId: row.sheet_id,
+          subgroups: new Set(),
+          count: 0,
+        });
       }
       groupsMap.get(groupKey)!.count++;
       if (row.subgroup) groupsMap.get(groupKey)!.subgroups.add(row.subgroup);
@@ -114,7 +126,7 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
         code: meta.code,
         sheetId: meta.sheetId,
         lessonCount: meta.count,
-        subgroups: Array.from(meta.subgroups).sort()
+        subgroups: Array.from(meta.subgroups).sort(),
       });
     }
 
@@ -123,7 +135,7 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
       currentSheetId: sheetsMeta[0]?.id || '',
       currentGroup: '',
       activeSubgroup: '',
-      hiddenSheets: [] as string[]
+      hiddenSheets: [] as string[],
     };
 
     this.cachedData = {
@@ -132,7 +144,7 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
       groups,
       preferences,
       version: versionData?.version || 'unknown',
-      updatedAt: versionData?.updated_at || new Date().toISOString()
+      updatedAt: versionData?.updated_at || new Date().toISOString(),
     };
 
     return this.cachedData;
@@ -140,7 +152,7 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
 
   subscribe(callback: (data: ScheduleData) => void): () => void {
     this.subscribers.add(callback);
-    
+
     // Send current cached data immediately if available
     if (this.cachedData) {
       callback(this.cachedData);
@@ -163,16 +175,12 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
   private setupRealtime(): void {
     this.realtimeChannel = this.client
       .channel('schedule_changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'lessons' },
-        (payload) => {
-          // Ignore initial system event from Supabase realtime connection handshake
-          // payload.eventType can be 'INSERT' | 'UPDATE' | 'DELETE' | 'SYSTEM'
-          if ((payload as any).eventType === 'SYSTEM') return;
-          this.handleRealtimeChange();
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lessons' }, (payload) => {
+        // Ignore initial system event from Supabase realtime connection handshake
+        // payload.eventType can be 'INSERT' | 'UPDATE' | 'DELETE' | 'SYSTEM'
+        if ((payload as any).eventType === 'SYSTEM') return;
+        this.handleRealtimeChange();
+      })
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'schedule_version' },
@@ -227,7 +235,7 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
     // Insert new lessons in batches
     const batchSize = 500;
     for (let i = 0; i < lessons.length; i += batchSize) {
-      const batch = lessons.slice(i, i + batchSize).map(l => ({
+      const batch = lessons.slice(i, i + batchSize).map((l) => ({
         sheet_id: l.sheetId,
         day: l.day,
         day_order: l.dayOrder,
@@ -241,7 +249,7 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
         room: l.room || null,
         is_exam: l.isExam,
         created_at: now,
-        updated_at: now
+        updated_at: now,
       }));
 
       const { error: insertError } = await this.client.from('lessons').insert(batch);
@@ -256,25 +264,36 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
     if (versionError) throw versionError;
   }
 
-  async publishFromWorkbook(workbook: { SheetNames: string[]; Sheets: Record<string, any> }): Promise<void> {
+  async publishFromWorkbook(workbook: {
+    SheetNames: string[];
+    Sheets: Record<string, any>;
+  }): Promise<void> {
     // Reuse existing sheet parser, load xlsx internally
     const { parseWorkbook } = await import('../../sheet');
     const XLSX = await this.loadXLSX();
     const sheets = parseWorkbook(workbook, XLSX);
-    
+
     const lessons: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[] = [];
     const now = new Date().toISOString();
-    
-    let dayOrder = 0;
+
+    const dayOrder = 0;
     const dayOrderMap = new Map<string, number>();
-    const DAY_ORDER = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
+    const DAY_ORDER = [
+      'Понедельник',
+      'Вторник',
+      'Среда',
+      'Четверг',
+      'Пятница',
+      'Суббота',
+      'Воскресенье',
+    ];
 
     for (const [sheetName, sheetLessons] of Object.entries(sheets)) {
       for (const lesson of sheetLessons) {
         if (!dayOrderMap.has(lesson.day)) {
           dayOrderMap.set(lesson.day, DAY_ORDER.indexOf(lesson.day));
         }
-        
+
         lessons.push({
           sheetId: sheetName,
           day: lesson.day as Lesson['day'],
@@ -287,7 +306,7 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
           type: lesson.type as Lesson['type'],
           teacher: lesson.teacher,
           room: lesson.room,
-          isExam: lesson.isExam
+          isExam: lesson.isExam,
         });
       }
     }
@@ -297,12 +316,13 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
 
   private async loadXLSX(): Promise<any> {
     if ((window as any).XLSX) return (window as any).XLSX;
-    
+
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
       script.src = 'xlsx.full.min.js';
       script.async = true;
-      script.onload = () => (window as any).XLSX ? resolve((window as any).XLSX) : reject(new Error('XLSX not loaded'));
+      script.onload = () =>
+        (window as any).XLSX ? resolve((window as any).XLSX) : reject(new Error('XLSX not loaded'));
       script.onerror = () => reject(new Error('Failed to load xlsx.full.min.js'));
       document.head.appendChild(script);
     });
