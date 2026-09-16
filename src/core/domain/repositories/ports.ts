@@ -7,18 +7,21 @@ import type { ScheduleData, Lesson, Sheet, Group } from '@core/domain/entities/t
 export interface IScheduleRepository {
   /** Load complete schedule for offline-first UX */
   loadFull(): Promise<ScheduleData>;
-  
+
   /** Subscribe to realtime changes */
   subscribe(callback: (data: ScheduleData) => void): () => void;
-  
+
   /** Get current version for update checks */
   getVersion(): Promise<{ version: string; updatedAt: string }>;
-  
+
   /** Admin: publish new schedule (replace all) */
   publish(lessons: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[]): Promise<void>;
-  
+
   /** Admin: publish from parsed Excel workbook */
-  publishFromWorkbook(workbook: { SheetNames: string[]; Sheets: Record<string, any> }, xlsx: any): Promise<void>;
+  publishFromWorkbook(
+    workbook: { SheetNames: string[]; Sheets: Record<string, any> },
+    xlsx: any
+  ): Promise<void>;
 }
 
 export interface IAuthProvider {
@@ -34,5 +37,7 @@ export interface IStorage {
 }
 
 export interface IFileParser {
-  parseExcel(file: ArrayBuffer | File): Promise<{ SheetNames: string[]; Sheets: Record<string, any> }>;
+  parseExcel(
+    file: ArrayBuffer | File
+  ): Promise<{ SheetNames: string[]; Sheets: Record<string, any> }>;
 }

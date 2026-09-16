@@ -54,7 +54,9 @@ export function initBrandGesture(deps: BrandGestureDeps): void {
   brand.addEventListener('click', async () => {
     clickCount++;
     if (resetTimer) clearTimeout(resetTimer);
-    resetTimer = window.setTimeout(() => { clickCount = 0; }, 1200);
+    resetTimer = window.setTimeout(() => {
+      clickCount = 0;
+    }, 1200);
     if (clickCount >= 10) {
       clickCount = 0;
       const pin = prompt('Введите PIN для доступа к админке:');

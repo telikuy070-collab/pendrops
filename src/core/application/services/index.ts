@@ -2,8 +2,19 @@
  * Application Services - Orchestrate use cases, handle cross-cutting concerns
  * These are the main entry points for the presentation layer
  */
-import type { ScheduleData, Lesson, UserPreferences, Sheet, Group } from '@core/domain/entities/types';
-import type { IScheduleRepository, IAuthProvider, IStorage, IFileParser } from '@core/domain/repositories/ports';
+import type {
+  ScheduleData,
+  Lesson,
+  UserPreferences,
+  Sheet,
+  Group,
+} from '@core/domain/entities/types';
+import type {
+  IScheduleRepository,
+  IAuthProvider,
+  IStorage,
+  IFileParser,
+} from '@core/domain/repositories/ports';
 import {
   loadScheduleUseCase,
   subscribeScheduleUseCase,
@@ -12,7 +23,7 @@ import {
   loadPreferencesUseCase,
   filterLessonsUseCase,
   getSheetsUseCase,
-  getGroupsUseCase
+  getGroupsUseCase,
 } from '@core/domain/use-cases/schedule';
 
 export class ScheduleService {

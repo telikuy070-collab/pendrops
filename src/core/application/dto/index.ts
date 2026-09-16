@@ -95,7 +95,7 @@ export function toScheduleDTO(data: {
     groups: groupsObj,
     preferences: toPreferencesDTO(data.preferences),
     version: data.version,
-    updatedAt: data.updatedAt
+    updatedAt: data.updatedAt,
   };
 }
 
@@ -115,7 +115,7 @@ export function toLessonDTO(lesson: Lesson): LessonDTO {
     room: lesson.room,
     isExam: lesson.isExam,
     createdAt: lesson.createdAt,
-    updatedAt: lesson.updatedAt
+    updatedAt: lesson.updatedAt,
   };
 }
 
@@ -124,7 +124,7 @@ export function toSheetDTO(sheet: Sheet): SheetDTO {
     id: sheet.id,
     name: sheet.name,
     order: sheet.order,
-    lessonCount: sheet.lessonCount
+    lessonCount: sheet.lessonCount,
   };
 }
 
@@ -133,7 +133,7 @@ export function toGroupDTO(group: Group): GroupDTO {
     code: group.code,
     sheetId: group.sheetId,
     lessonCount: group.lessonCount,
-    subgroups: group.subgroups
+    subgroups: group.subgroups,
   };
 }
 
@@ -142,6 +142,6 @@ export function toPreferencesDTO(prefs: UserPreferences): UserPreferencesDTO {
     currentSheetId: prefs.currentSheetId,
     currentGroup: prefs.currentGroup,
     activeSubgroup: prefs.activeSubgroup,
-    hiddenSheets: prefs.hiddenSheets
+    hiddenSheets: prefs.hiddenSheets,
   };
 }

@@ -144,7 +144,8 @@ export function createAdminView(authService, adminService, toast) {
     try {
       await adminService.publishFromExcel(pickedFile);
       toast?.show?.('Расписание опубликовано', 'ok');
-      status.innerHTML = '✅ Опубликовано в Supabase!<br><span class="admin-sub">Ученики увидят через 1-2 мин (realtime)</span>';
+      status.innerHTML =
+        '✅ Опубликовано в Supabase!<br><span class="admin-sub">Ученики увидят через 1-2 мин (realtime)</span>';
       publish.classList.add('hidden');
       picked.classList.add('hidden');
     } catch (err) {

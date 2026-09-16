@@ -1,6 +1,10 @@
 // Type declarations for existing view modules (JS files)
 export function createToast(container: HTMLElement | null): {
-  show(message: string, type?: 'ok' | 'bad' | 'info', options?: { label: string; onClick: () => void }): void;
+  show(
+    message: string,
+    type?: 'ok' | 'bad' | 'info',
+    options?: { label: string; onClick: () => void }
+  ): void;
 };
 
 export function createScheduleView(container: HTMLElement | null): {

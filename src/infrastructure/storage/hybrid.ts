@@ -28,13 +28,13 @@ function serializeStorageValue<T>(value: T): string {
     if (currentValue instanceof Map) {
       return {
         __type: 'Map',
-        value: Array.from(currentValue.entries())
+        value: Array.from(currentValue.entries()),
       };
     }
     if (currentValue instanceof Set) {
       return {
         __type: 'Set',
-        value: Array.from(currentValue.values())
+        value: Array.from(currentValue.values()),
       };
     }
     return currentValue;
@@ -85,7 +85,7 @@ export class HybridStorage implements IStorage {
 
   async set<T>(key: string, value: T): Promise<void> {
     const json = serializeStorageValue(value);
-    
+
     // Try localStorage first
     try {
       localStorage.setItem(key, json);

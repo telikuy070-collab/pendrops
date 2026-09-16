@@ -19,11 +19,11 @@ export function getSupabaseClient(): SupabaseClient {
   clientInstance = createClient(url, anonKey, {
     auth: {
       persistSession: false, // We handle auth via PIN, not Supabase Auth
-      autoRefreshToken: false
+      autoRefreshToken: false,
     },
     realtime: {
-      params: { eventsPerSecond: 10 }
-    }
+      params: { eventsPerSecond: 10 },
+    },
   });
 
   return clientInstance;
