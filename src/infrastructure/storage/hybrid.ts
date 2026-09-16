@@ -23,12 +23,45 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
+function serializeStorageValue<T>(value: T): string {
+  return JSON.stringify(value, (_key, currentValue) => {
+    if (currentValue instanceof Map) {
+      return {
+        __type: 'Map',
+        value: Array.from(currentValue.entries())
+      };
+    }
+    if (currentValue instanceof Set) {
+      return {
+        __type: 'Set',
+        value: Array.from(currentValue.values())
+      };
+    }
+    return currentValue;
+  });
+}
+
+function deserializeStorageValue<T>(raw: string): T {
+  return JSON.parse(raw, (_key, currentValue) => {
+    if (currentValue && typeof currentValue === 'object' && '__type' in currentValue) {
+      const typed = currentValue as { __type: string; value: unknown };
+      if (typed.__type === 'Map') {
+        return new Map(typed.value as Iterable<[unknown, unknown]>);
+      }
+      if (typed.__type === 'Set') {
+        return new Set(typed.value as Iterable<unknown>);
+      }
+    }
+    return currentValue;
+  }) as T;
+}
+
 export class HybridStorage implements IStorage {
   async get<T>(key: string): Promise<T | null> {
     // Try localStorage first (synchronous, faster)
     try {
       const raw = localStorage.getItem(key);
-      if (raw) return JSON.parse(raw) as T;
+      if (raw) return deserializeStorageValue<T>(raw);
     } catch {
       // Fall through to IndexedDB
     }
@@ -39,7 +72,10 @@ export class HybridStorage implements IStorage {
       return await new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readonly');
         const request = tx.objectStore(STORE_NAME).get(key);
-        request.onsuccess = () => resolve(request.result as T | null);
+        request.onsuccess = () => {
+          const result = request.result as string | null;
+          resolve(result ? deserializeStorageValue<T>(result) : null);
+        };
         request.onerror = () => reject(request.error);
       });
     } catch {
@@ -48,7 +84,7 @@ export class HybridStorage implements IStorage {
   }
 
   async set<T>(key: string, value: T): Promise<void> {
-    const json = JSON.stringify(value);
+    const json = serializeStorageValue(value);
     
     // Try localStorage first
     try {

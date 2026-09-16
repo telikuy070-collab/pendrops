@@ -1,4 +1,9 @@
 import { defineConfig } from 'vite';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /**
  * Vite config for PenDrops PWA.
@@ -59,7 +64,10 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: {
-        // Allow cleaner imports in future
+        '@core': resolve(__dirname, 'src/core'),
+        '@infrastructure': resolve(__dirname, 'src/infrastructure'),
+        '@presentation': resolve(__dirname, 'src/presentation'),
+        '@shared': resolve(__dirname, 'src/shared'),
       },
     },
   };
