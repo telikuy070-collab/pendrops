@@ -33,6 +33,9 @@ export async function bootstrap(): Promise<void> {
   const authService = new AuthService(auth);
   const adminService = new AdminService(repository, parser);
 
+  // Register Service Worker FIRST (required for beforeinstallprompt)
+  registerServiceWorker();
+
   // Initialize UI FIRST (so toast exists before any async callbacks)
   initializeUI(scheduleService, prefsService, authService, adminService);
   
@@ -72,8 +75,6 @@ export async function bootstrap(): Promise<void> {
     actions.setError('Не удалось загрузить расписание');
   } finally {
     actions.setLoading(false);
-  }
-  
   }
 
 let toast: ReturnType<typeof createToast>;
@@ -357,3 +358,58 @@ bootstrap().catch(err => {
   console.error('[App] Fatal error:', err);
   document.body.innerHTML = '<div style="padding:2rem;text-align:center">Ошибка инициализации приложения</div>';
 });
+}
+
+/**
+ * Register Service Worker for PWA functionality.
+ * Required for beforeinstallprompt to fire on Chrome Android.
+ */
+function registerServiceWorker(): void {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, {
+      scope: import.meta.env.BASE_URL
+    }).then(reg => {
+      if (import.meta.env.DEV) {
+        console.log('[SW] Registered:', reg.scope);
+      }
+    }).catch(err => {
+      console.error('[SW] Registration failed:', err);
+    });
+  }
+}
+
+/**
+ * Handle beforeinstallprompt for PWA install button.
+ * Shows the install button when the event fires.
+ */
+let deferredPrompt: BeforeInstallPromptEvent | null = null;
+
+window.addEventListener('beforeinstallprompt', (e: Event) => {
+  const promptEvent = e as BeforeInstallPromptEvent;
+  promptEvent.preventDefault();
+  deferredPrompt = promptEvent;
+  const btn = document.getElementById('installBtn');
+  if (btn) btn.classList.remove('hidden');
+});
+
+const installBtn = document.getElementById('installBtn');
+if (installBtn) {
+  installBtn.addEventListener('click', async () => {
+    if (!deferredPrompt) {
+      alert('Откройте меню браузера → Добавить на главный экран');
+      return;
+    }
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      installBtn.classList.add('hidden');
+    }
+    deferredPrompt = null;
+  });
+}
+
+// Type for beforeinstallprompt event
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}

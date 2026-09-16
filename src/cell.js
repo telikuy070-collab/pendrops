@@ -1,7 +1,7 @@
 import { TYPE_IDS } from './constants.js';
 import { norm, lower } from './text.js';
 
-// Word boundary for Cyrillic. JS \b doesn't recognize Cyrillic.
+// Word boundary for Cyrillic
 const LEFT = '(?:^|[\\s.,;:])';
 const RIGHT = '(?=$|[\\s.,;:])';
 
@@ -10,10 +10,33 @@ const GROUP_RE = /^([А-ЯA-ZӨҮҢ]{1,6})[-\s]?(\d{1,2})[-\s]?(\d{2})(?:\s*\(?(
 // Detect which type was found.
 const TYPE_KEYWORDS_RE = /(лабораторн|лаб\.)|(лекция|лек\.)|(практик|практ\.|пр\.|семинар|сем\.)/i;
 
-// Word boundary for Cyrillic
+// Word boundary for Cyrillic - extended to handle all room formats:
+// - "№7 корп., 217" (with comma after корп.)
+// - "№7 корпус  225" (double spaces)
+// - "№3 корпус №7 корпус  319" (multiple корпус)
+// - "спорттук аянтча" (Kyrgyz for sports hall)
+// - "№7 корпус 238"
+// - "№7 корп., 336" (with comma)
 const ROOM_RE = new RegExp(
   LEFT +
-    '((?:корпус|корп\\.?|кор\\.?)\\s*\\d+|спорттук\\s+аянтча|кл\\.\\s*[А-Яа-яA-Za-z0-9 ]+|Оптика|№\\s*\\d+(?:\\s*(?:корпус|корп\\.?|кор\\.?))?(?:\\s*\\d+)?)' +
+    '(' +
+    // №7 корп., 217 OR №7 корпус 225 OR №3 корпус №7 корпус 319
+    '(?:№\\s*\\d+\\s*(?:корп\\.?|корпус|кор\\.?)\\s*[,]?\\s*\\d+)' +
+    '|' +
+    // №7 корпус 238 (without comma)
+    '(?:№\\s*\\d+\\s*(?:корп\\.?|корпус|кор\\.?)\\s+\\d+)' +
+    '|' +
+    // спорттук аянтча (Kyrgyz sports hall)
+    '(?:спорттук\\s+аянтча)' +
+    '|' +
+    // кл. 123, Оптика, etc.
+    '(?:кл\\.\\s*[А-Яа-яA-Za-z0-9 ]+)' +
+    '|' +
+    '(?:Оптика)' +
+    '|' +
+    // Generic: корпус/корп/корп. followed by number (with optional comma)
+    '(?:(?:корпус|корп\\.?|кор\\.?)\\s*[,]?\\s*\\d+)' +
+    ')' +
     RIGHT,
   'i'
 );
