@@ -35,7 +35,7 @@ export default defineConfig(({ mode }) => {
       port: 8080,
       open: true,
     },
-    build: {
+build: {
       outDir: 'dist',
       assetsDir: 'assets',
       sourcemap: !isProd,
@@ -44,13 +44,6 @@ export default defineConfig(({ mode }) => {
           main: new URL('./index.html', import.meta.url).pathname,
         },
         output: {
-          // Code-split vendor libs separately for better caching
-          // Rolldown (Vite 8 default) requires manualChunks as a function
-          manualChunks: (id) => {
-            if (id.includes('node_modules/xlsx')) return 'xlsx';
-            if (id.includes('node_modules/zod')) return 'zod';
-            if (id.includes('node_modules/@supabase')) return 'supabase';
-          },
           // Hash-based filenames for cache busting
           entryFileNames: 'assets/[name].[hash].js',
           chunkFileNames: 'assets/[name].[hash].js',

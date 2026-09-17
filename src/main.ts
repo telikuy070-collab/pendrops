@@ -18,6 +18,9 @@ import { initBrandGesture } from '@presentation/gestures/brandGesture';
 import { escapeHtml } from './text.js';
 import { todayName } from '@presentation/stores/appStore';
 import type { PreferencesService as PrefsServiceType } from '@core/application/services';
+import { reportError } from './view/errorBoundary.js';
+// Force Supabase bundle inclusion
+import '@supabase/supabase-js';
 
 /** Initialize all services and start the app */
 export async function bootstrap(): Promise<void> {
