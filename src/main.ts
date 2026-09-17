@@ -19,11 +19,18 @@ import { escapeHtml } from './text.js';
 import { todayName } from '@presentation/stores/appStore';
 import type { PreferencesService as PrefsServiceType } from '@core/application/services';
 import { reportError } from './view/errorBoundary.js';
+import { getSupabaseClient } from '@infrastructure/supabase/client.js';
 // Force Supabase bundle inclusion
 import '@supabase/supabase-js';
 
+// Toast instance - declared at module level so it's accessible before bootstrap completes
+let toast: ReturnType<typeof createToast>;
+
 /** Initialize all services and start the app */
 export async function bootstrap(): Promise<void> {
+  // Force Supabase client initialization for bundle inclusion
+  getSupabaseClient();
+
   // Infrastructure
   const repository = new SupabaseScheduleRepository();
   const auth = new SupabaseAuthProvider();
@@ -35,9 +42,6 @@ export async function bootstrap(): Promise<void> {
   const prefsService = new PreferencesService(storage);
   const authService = new AuthService(auth);
   const adminService = new AdminService(repository, parser);
-
-  // Register Service Worker FIRST (required for beforeinstallprompt)
-  registerServiceWorker();
 
   // Initialize UI FIRST (so toast exists before any async callbacks)
   initializeUI(scheduleService, prefsService, authService, adminService);
@@ -75,11 +79,10 @@ export async function bootstrap(): Promise<void> {
   } catch (err) {
     console.error('[App] Bootstrap failed:', err);
     actions.setError('Не удалось загрузить расписание');
+    reportError(err, 'Не удалось загрузить расписание');
   } finally {
     actions.setLoading(false);
   }
-
-  let toast: ReturnType<typeof createToast>;
 
   function initializeUI(
     scheduleService: ScheduleService,
@@ -397,13 +400,6 @@ export async function bootstrap(): Promise<void> {
       5 * 60 * 1000
     );
   }
-
-  // Start the app
-  bootstrap().catch((err) => {
-    console.error('[App] Fatal error:', err);
-    document.body.innerHTML =
-      '<div style="padding:2rem;text-align:center">Ошибка инициализации приложения</div>';
-  });
 }
 
 /**
@@ -426,6 +422,14 @@ function registerServiceWorker(): void {
       });
   }
 }
+
+// Start the app - register SW independently (runs even if bootstrap fails)
+registerServiceWorker();
+bootstrap().catch((err) => {
+  console.error('[App] Fatal error:', err);
+  document.body.innerHTML =
+    '<div style="padding:2rem;text-align:center">Ошибка инициализации приложения</div>';
+});
 
 /**
  * Handle beforeinstallprompt for PWA install button.

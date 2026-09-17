@@ -49,11 +49,12 @@ function ensureTemplate() {
     t.id = TEMPLATE_ID;
     t.innerHTML = `
       <style>${styles}</style>
-      <div class="error-boundary" role="alert" aria-live="polite">
+      <div class="error-boundary" role="alert" aria-live="polite" hidden>
         <h2>⚠️ Что-то пошло не так</h2>
         <p class="error-message"></p>
         <button type="button" class="error-reload">Перезагрузить</button>
       </div>
+      <slot></slot>
     `;
     document.body.appendChild(t);
   }
@@ -72,6 +73,7 @@ export class ErrorBoundary extends HTMLElement {
   }
 
   connectedCallback() {
+    // Don't render error UI initially - show light DOM children (slot) until handleError() is called
     this.render();
     // Listen for custom error events dispatched on document
     if (!this._boundHandleError) {
@@ -112,6 +114,7 @@ export class ErrorBoundary extends HTMLElement {
     const tmpl = ensureTemplate();
     const message = this.getAttribute('message') || 'Что-то пошло не так';
     const title = this.getAttribute('title') || '⚠️ Ошибка';
+    const hasError = !!this._detail;
 
     // If shadow DOM is supported, use it for style isolation
     if (this.attachShadow) {
@@ -121,20 +124,37 @@ export class ErrorBoundary extends HTMLElement {
         shadow.appendChild(clone);
         this._wireEvents(shadow);
       }
-      // Update text content
-      const msgEl = this.shadowRoot.querySelector('.error-message');
-      if (msgEl) msgEl.textContent = this._detail?.originalError?.message || message;
+      // Toggle error UI vs slot based on error state
+      const errorDiv = this.shadowRoot.querySelector('.error-boundary');
+      const slot = this.shadowRoot.querySelector('slot');
+      if (errorDiv) errorDiv.hidden = !hasError;
+      if (slot) slot.hidden = hasError;
+      // Update text content when showing error
+      if (hasError) {
+        const msgEl = this.shadowRoot.querySelector('.error-message');
+        if (msgEl) msgEl.textContent = this._detail?.originalError?.message || message;
+        const titleEl = this.shadowRoot.querySelector('h2');
+        if (titleEl) titleEl.textContent = title;
+      }
     } else {
       // Fallback: render directly (no style isolation)
-      this.innerHTML = `
-        <style>${styles}</style>
-        <div class="error-boundary" role="alert" aria-live="polite">
-          <h2>${title}</h2>
-          <p>${this._detail?.originalError?.message || message}</p>
-          <button type="button" class="error-reload">Перезагрузить</button>
-        </div>
-      `;
-      this.querySelector('.error-reload')?.addEventListener('click', () => location.reload());
+      if (hasError) {
+        this.innerHTML = `
+          <style>${styles}</style>
+          <div class="error-boundary" role="alert" aria-live="polite">
+            <h2>${title}</h2>
+            <p>${this._detail?.originalError?.message || message}</p>
+            <button type="button" class="error-reload">Перезагрузить</button>
+          </div>
+        `;
+        this.querySelector('.error-reload')?.addEventListener('click', () => location.reload());
+      } else {
+        // No error: show light DOM children (slot equivalent)
+        // Keep existing light DOM content - don't overwrite it
+        // Just ensure no error UI is present
+        const existingError = this.querySelector('.error-boundary');
+        if (existingError) existingError.remove();
+      }
     }
   }
 

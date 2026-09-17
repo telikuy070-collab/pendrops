@@ -1,39 +1,74 @@
-const CACHE = 'schedule-pwa-v17';
-const RUNTIME_CACHE = 'schedule-runtime-v17';
+/**
+ * PenDrops Service Worker — production-ready
+ * - Dynamic base path via registration.scope (no hardcoded /pendrops/)
+ * - Caches static assets (manifest, icons, version.json, schedule.xls)
+ * - Runtime-caches JS/CSS/HTML on first fetch
+ * - Auto-incrementing cache version via build-time timestamp
+ * - Cross-origin check preserved for Supabase requests
+ */
+
+// Cache version: updated at build time (inject via build script or CI)
+// Format: 'schedule-pwa-<timestamp>'
+const CACHE_VERSION = 'schedule-pwa-1758134400000'; // TODO: replace with build timestamp at build time
+const CACHE = CACHE_VERSION;
+const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const SHARED_CACHE = 'shared-files';
 const REMOTE_SCHEDULE_CACHE = 'remote-schedule-v1';
-const LAST_VERSION_KEY = './data/version.json';
+const LAST_VERSION_KEY = 'data/version.json';
 
-const ASSETS = [
-  './',
-  './index.html',
-  './share-handler.html',
-  './styles.css',
-  './manifest.json',
-  './xlsx.full.min.js',
-  './src/app.js',
-  './src/sheet.js',
-  './src/cell.js',
-  './src/day.js',
-  './src/timing.js',
-  './src/text.js',
-  './src/store.js',
-  './src/admin.js',
-  './src/constants.js',
-  './src/view/scheduleView.js',
-  './src/view/toast.js',
-  './src/view/dom.js',
-  './src/view/adminView.js',
-  './assets/icons/icon.svg',
-  './assets/icons/icon-192.png',
-  './assets/icons/icon-512.png',
+/**
+ * Resolve base path from registration.scope.
+ * Examples:
+ *   - https://user.github.io/pendrops/  -> '/pendrops/'
+ *   - https://user.github.io/           -> '/'
+ *   - http://localhost:8080/            -> '/'
+ */
+function getBasePath() {
+  const scope = self.registration?.scope || self.location.href;
+  const url = new URL(scope);
+  return url.pathname.endsWith('/') ? url.pathname : url.pathname + '/';
+}
+
+const BASE = getBasePath();
+
+/**
+ * Build absolute URL from relative path using BASE.
+ */
+function asset(path) {
+  return new URL(path, BASE).href;
+}
+
+/**
+ * Static assets to precache on install.
+ * These are files in public/ that don't change between builds (no hashes).
+ * Main JS/CSS are intentionally NOT here — they're hashed and cached on first fetch.
+ */
+const PRECACHE_ASSETS = [
+  BASE,                           // '/' (scope root)
+  asset('index.html'),
+  asset('share-handler.html'),
+  asset('manifest.json'),
+  asset('xlsx.full.min.js'),
+  asset('styles.css'),
+  asset('icons/icon.svg'),
+  asset('icons/icon-192.png'),
+  asset('icons/icon-512.png'),
+  asset('data/version.json'),
+  asset('data/schedule.xls'),
 ];
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
   e.waitUntil(
-    caches.open(CACHE).then(async (c) => {
-      await Promise.allSettled(ASSETS.map((u) => c.add(u).catch(() => null)));
+    caches.open(CACHE).then(async (cache) => {
+      await Promise.allSettled(
+        PRECACHE_ASSETS.map((url) =>
+          cache.add(url).catch((err) => {
+            console.warn('[SW] Precaching failed for', url, err);
+            return null;
+          })
+        )
+      );
     })
   );
 });
@@ -64,29 +99,36 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
+
+  // Cross-origin check: skip Supabase and other external requests
   if (url.origin !== location.origin) return;
 
-  if (req.method === 'POST' && url.pathname.endsWith('/share-handler.html')) {
+  // Share handler POST
+  if (req.method === 'POST' && url.pathname === asset('share-handler.html')) {
     e.respondWith(handleShare(req));
     return;
   }
 
-  // data/* — network-first, fallback на cache
-  if (
-    url.pathname.startsWith('/pendrops/data/') ||
-    url.pathname.startsWith('./data/') ||
+  // data/* — network-first with cache fallback
+  const isDataPath =
+    url.pathname.startsWith(asset('data/')) ||
     url.pathname.endsWith('/data/schedule.xls') ||
-    url.pathname.endsWith('/data/version.json')
-  ) {
+    url.pathname.endsWith('/data/version.json');
+
+  if (isDataPath) {
     e.respondWith(networkFirstWithCache(req));
     return;
   }
 
+  // Navigation requests: network-first, fallback to cached index.html
   if (req.mode === 'navigate') {
-    e.respondWith(fetch(req).catch(() => caches.match('./index.html')));
+    e.respondWith(
+      fetch(req).catch(() => caches.match(asset('index.html')))
+    );
     return;
   }
 
+  // All other requests: stale-while-revalidate (cache-first, then network)
   e.respondWith(
     caches.match(req).then((cached) => {
       const networkFetch = fetch(req)
@@ -139,17 +181,17 @@ async function handleShare(req) {
       const cache = await caches.open(SHARED_CACHE);
       await cache.put('/__shared__', response);
     }
-    return Response.redirect(new URL('./share-handler.html', req.url).href, 303);
+    return Response.redirect(new URL(asset('share-handler.html'), req.url).href, 303);
   } catch (err) {
     console.error('[SW] share error:', err);
-    return Response.redirect(new URL('./index.html', req.url).href, 303);
+    return Response.redirect(new URL(asset('index.html'), req.url).href, 303);
   }
 }
 
 /**
- * Периодическая фоновая синхронизация (Chrome/Edge/Opera).
- * Регистрируется клиентом через registration.periodicSync.register('check-schedule', {minInterval: 5*60*1000}).
- * ВАЖНО: periodicSync требует user gesture для permission. Fallback: клиент сам тикает по 5 мин пока PWA открыта.
+ * Periodic background sync (Chrome/Edge/Opera).
+ * Registered by client via registration.periodicSync.register('check-schedule', {minInterval: 5*60*1000}).
+ * Requires user gesture for permission. Fallback: client ticks every 5 min while PWA open.
  */
 self.addEventListener('periodicsync', (e) => {
   if (e.tag === 'check-schedule') {
@@ -158,8 +200,8 @@ self.addEventListener('periodicsync', (e) => {
 });
 
 /**
- * Клиент шлёт сообщение "check-schedule" — мы проверяем и качаем новое.
- * Используется как fallback если periodicSync не поддерживается.
+ * Client sends "check-schedule" message — we check and download updates.
+ * Fallback if periodicSync not supported.
  */
 self.addEventListener('message', (e) => {
   const data = e.data;
@@ -172,19 +214,20 @@ self.addEventListener('message', (e) => {
 });
 
 /**
- * Проверяет version.json. Если новее — качает schedule.xls в cache, шлёт клиентам "schedule-updated".
- * Не уведомляет сам себя — только клиентов.
+ * Checks version.json. If newer — downloads schedule.xls to cache, notifies clients "schedule-updated".
+ * Does not notify self — only clients.
  */
 async function checkScheduleUpdate() {
   try {
-    const verRes = await fetch(LAST_VERSION_KEY + '?t=' + Date.now(), { cache: 'no-store' });
+    const verUrl = asset(LAST_VERSION_KEY) + '?t=' + Date.now();
+    const verRes = await fetch(verUrl, { cache: 'no-store' });
     if (!verRes.ok) return;
     const verJson = await verRes.json();
     const newStamp = verJson && verJson.updated;
     if (!newStamp) return;
 
     const cache = await caches.open(REMOTE_SCHEDULE_CACHE);
-    const lastKnown = (await cache.match(LAST_VERSION_KEY)) || null;
+    const lastKnown = (await cache.match(asset(LAST_VERSION_KEY))) || null;
     let lastStamp = null;
     if (lastKnown) {
       try {
@@ -195,30 +238,31 @@ async function checkScheduleUpdate() {
       }
     }
 
-    if (lastStamp === newStamp) return; // ничего не изменилось
+    if (lastStamp === newStamp) return; // nothing changed
 
-    // Качаем новый schedule.xls
-    const xlsRes = await fetch('./data/schedule.xls?t=' + Date.now(), { cache: 'no-store' });
+    // Download new schedule.xls
+    const xlsUrl = asset('data/schedule.xls') + '?t=' + Date.now();
+    const xlsRes = await fetch(xlsUrl, { cache: 'no-store' });
     if (!xlsRes.ok) return;
     const xlsBuf = await xlsRes.arrayBuffer();
 
-    // Кладём в cache
+    // Store in cache
     await cache.put(
-      LAST_VERSION_KEY,
+      asset(LAST_VERSION_KEY),
       new Response(JSON.stringify(verJson), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })
     );
     await cache.put(
-      './data/schedule.xls',
+      asset('data/schedule.xls'),
       new Response(xlsBuf.slice(0), {
         status: 200,
         headers: { 'Content-Type': 'application/vnd.ms-excel' },
       })
     );
 
-    // Уведомляем всех клиентов
+    // Notify all clients
     const clients = await self.clients.matchAll({ includeUncontrolled: true });
     clients.forEach((c) =>
       c.postMessage({

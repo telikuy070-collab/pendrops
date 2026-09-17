@@ -78,9 +78,57 @@ jobs:
       - run: npm ci
       - run: npm run test:security
 
+  # Matrix testing across Node versions
+  matrix-test:
+    name: Matrix Test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['20', '22', '24']
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test
+
+  # Security scanning
+  npm-audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm audit --audit-level=high
+        continue-on-error: true
+
+  # Dependency review for PRs
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          config-file: '.github/dependency-review-config.yml'
+          fail-on-severity: high
+
+  # Build with caching
   build:
     name: Build (Vite + TypeScript)
     runs-on: ubuntu-latest
+    needs: [typecheck, test, edge-tests, store-audit, security-audit, matrix-test, npm-audit]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -96,6 +144,161 @@ jobs:
         with:
           name: dist
           path: dist/
+          retention-days: 7
 
-  # Deploy is handled by a separate workflow triggered on push to main
-  # after CI passes. See: .github/workflows/deploy.yml
+  # Bundle size check
+  bundle-size:
+    name: Bundle Size Check
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Check bundle sizes
+        run: |
+          echo "=== Bundle Size Report ==="
+          find dist -name "*.js" -o -name "*.css" | xargs ls -lh
+          echo ""
+          echo "=== Gzipped sizes ==="
+          find dist -name "*.js" -o -name "*.css" | xargs gzip -c | wc -c
+          # Fail if main JS bundle > 200KB gzipped
+          MAIN_JS=$(find dist/assets -name "index-*.js" | head -1)
+          if [ -f "$MAIN_JS" ]; then
+            SIZE=$(gzip -c "$MAIN_JS" | wc -c)
+            echo "Main JS gzipped: $SIZE bytes"
+            if [ $SIZE -gt 204800 ]; then
+              echo "::error::Main JS bundle exceeds 200KB gzipped ($SIZE bytes)"
+              exit 1
+            fi
+          fi
+
+  # Lighthouse CI for performance budget
+  lighthouse:
+    name: Lighthouse CI
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Setup Lighthouse CI
+        run: npm install -g @lhci/cli@0.13.x
+      - name: Run Lighthouse CI
+        run: |
+          cat > lighthouserc.json << 'EOF'
+          {
+            "ci": {
+              "collect": {
+                "numberOfRuns": 3,
+                "startServerCommand": "npx serve dist -p 3000",
+                "url": ["http://localhost:3000"],
+                "settings": {
+                  "headless": true,
+                  "preset": "desktop"
+                }
+              },
+              "assert": {
+                "assertions": {
+                  "categories:performance": ["error", { "minScore": 0.9 }],
+                  "categories:accessibility": ["error", { "minScore": 0.9 }],
+                  "categories:best-practices": ["error", { "minScore": 0.9 }],
+                  "categories:seo": ["error", { "minScore": 0.8 }],
+                  "first-contentful-paint": ["error", { "maxNumericValue": 2000 }],
+                  "largest-contentful-paint": ["error", { "maxNumericValue": 2500 }],
+                  "total-blocking-time": ["error", { "maxNumericValue": 300 }],
+                  "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1 }],
+                  "interactive": ["error", { "maxNumericValue": 3500 }]
+                }
+              },
+              "upload": {
+                "target": "temporary-public-storage"
+              }
+            }
+          }
+          EOF
+          lhci autorun
+        continue-on-error: true
+
+  # E2E tests with Playwright
+  e2e:
+    name: E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Install Playwright
+        run: |
+          npm install -g @playwright/test@latest
+          npx playwright install --with-deps chromium
+      - name: Start preview server
+        run: |
+          npx serve dist -p 3000 &
+          sleep 3
+      - name: Run Playwright tests
+        run: |
+          cat > e2e.test.js << 'EOF'
+          const { test, expect } = require('@playwright/test');
+
+          test.describe('PenDrops PWA', () => {
+            test('loads and shows schedule', async ({ page }) => {
+              await page.goto('http://localhost:3000');
+              await expect(page.locator('#scheduleContainer')).toBeVisible({ timeout: 10000 });
+            });
+
+            test('service worker registers', async ({ page }) => {
+              await page.goto('http://localhost:3000');
+              const swRegistered = await page.evaluate(async () => {
+                const reg = await navigator.serviceWorker.ready;
+                return !!reg;
+              });
+              expect(swRegistered).toBeTruthy();
+            });
+
+            test('manifest loads', async ({ page }) => {
+              await page.goto('http://localhost:3000');
+              const manifestLink = page.locator('link[rel="manifest"]');
+              await expect(manifestLink).toHaveAttribute('href', /manifest\.json/);
+            });
+
+            test('offline capability', async ({ page }) => {
+              await page.goto('http://localhost:3000');
+              await page.waitForLoadState('networkidle');
+              await page.context().setOffline(true);
+              await page.reload();
+              await expect(page.locator('#scheduleContainer')).toBeVisible({ timeout: 10000 });
+            });
+          });
+          EOF
+          npx playwright test e2e.test.js --reporter=line
+        continue-on-error: true
+
+  # CodeQL analysis (security)
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript, typescript]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{matrix.language}}"
