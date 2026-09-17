@@ -18,6 +18,7 @@ import { initBrandGesture } from '@presentation/gestures/brandGesture';
 import { escapeHtml } from './text.js';
 import { todayName } from '@presentation/stores/appStore';
 import type { PreferencesService as PrefsServiceType } from '@core/application/services';
+import { reportError } from './view/errorBoundary.js';
 
 let toast: ReturnType<typeof createToast>;
 
@@ -70,6 +71,7 @@ export async function bootstrap(): Promise<void> {
   } catch (err) {
     console.error('[App] Bootstrap failed:', err);
     actions.setError('Не удалось загрузить расписание');
+    reportError(err, 'Не удалось загрузить расписание');
   } finally {
     actions.setLoading(false);
   }
