@@ -1,20 +1,21 @@
 /**
  * Supabase Client - Singleton factory for browser-safe client
  * Uses anon key only (never service role in browser)
+ * Configuration is runtime-safe and allows fallback to defaults
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { supabaseConfig, validateConfig } from './config';
 
 let clientInstance: SupabaseClient | null = null;
 
 export function getSupabaseClient(): SupabaseClient {
   if (clientInstance) return clientInstance;
 
-  const url = import.meta.env.VITE_SUPABASE_URL;
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-  if (!url || !anonKey) {
-    throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY in environment');
+  if (!validateConfig()) {
+    throw new Error('Invalid Supabase configuration');
   }
+
+  const { url, anonKey } = supabaseConfig;
 
   clientInstance = createClient(url, anonKey, {
     auth: {
@@ -26,9 +27,12 @@ export function getSupabaseClient(): SupabaseClient {
     },
   });
 
+  console.log('[Supabase] Client initialized:', url);
   return clientInstance;
 }
+
 
 export function resetSupabaseClient(): void {
   clientInstance = null;
 }
+

@@ -96,7 +96,7 @@ export function createAdminView(authService, adminService, toast) {
         pin.value = '';
         return;
       }
-    } catch (e) {
+    } catch (_e) {
       showError('Ошибка проверки PIN');
       return;
     }
