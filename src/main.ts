@@ -151,7 +151,9 @@ function bindEvents(
   sheetModal
     ?.querySelector('.modal-backdrop')
     ?.addEventListener('click', () => actions.closeModal());
-  sheetModal?.querySelector('[data-close="sheet"]')?.addEventListener('click', () => actions.closeModal());
+  sheetModal
+    ?.querySelector('[data-close="sheet"]')
+    ?.addEventListener('click', () => actions.closeModal());
 
   const groupBtn = document.getElementById('groupBtn');
   const groupModal = document.getElementById('groupModal');
@@ -162,7 +164,9 @@ function bindEvents(
   groupModal
     ?.querySelector('.modal-backdrop')
     ?.addEventListener('click', () => actions.closeModal());
-  groupModal?.querySelector('[data-close="group"]')?.addEventListener('click', () => actions.closeModal());
+  groupModal
+    ?.querySelector('[data-close="group"]')
+    ?.addEventListener('click', () => actions.closeModal());
 
   const subgroupBtn = document.getElementById('subgroupBtn');
   const subgroupModal = document.getElementById('subgroupModal');
@@ -173,7 +177,9 @@ function bindEvents(
   subgroupModal
     ?.querySelector('.modal-backdrop')
     ?.addEventListener('click', () => actions.closeModal());
-  subgroupModal?.querySelector('[data-close="subgroup"]')?.addEventListener('click', () => actions.closeModal());
+  subgroupModal
+    ?.querySelector('[data-close="subgroup"]')
+    ?.addEventListener('click', () => actions.closeModal());
 
   const searchInput = document.getElementById('searchInput') as HTMLInputElement | null;
   const dayFilter = document.getElementById('dayFilter') as HTMLSelectElement | null;
@@ -254,7 +260,9 @@ function renderGroupPicker(prefsService: PrefsServiceType): void {
   const prefs = appStore.get('preferences').value;
   if (!sched || !groupList || !prefs.currentSheetId) return;
 
-  const groups = Array.from(sched.groups.values()).filter((g) => g.sheetId === prefs.currentSheetId);
+  const groups = Array.from(sched.groups.values()).filter(
+    (g) => g.sheetId === prefs.currentSheetId
+  );
 
   groupList.innerHTML = groups
     .map((group) => {
@@ -347,13 +355,16 @@ function startUpdateChecker(scheduleService: ScheduleService): void {
     }
   });
 
-  setInterval(async () => {
-    const currentVersion = appStore.get('schedule').value?.version || '';
-    const { hasUpdate, version, updatedAt } = await scheduleService.checkUpdates(currentVersion);
-    if (hasUpdate) {
-      actions.setUpdateAvailable({ version, updatedAt });
-    }
-  }, 5 * 60 * 1000);
+  setInterval(
+    async () => {
+      const currentVersion = appStore.get('schedule').value?.version || '';
+      const { hasUpdate, version, updatedAt } = await scheduleService.checkUpdates(currentVersion);
+      if (hasUpdate) {
+        actions.setUpdateAvailable({ version, updatedAt });
+      }
+    },
+    5 * 60 * 1000
+  );
 }
 
 /**
@@ -415,5 +426,6 @@ interface BeforeInstallPromptEvent extends Event {
 
 bootstrap().catch((err) => {
   console.error('[App] Fatal error:', err);
-  document.body.innerHTML = '<div style="padding:2rem;text-align:center">Ошибка инициализации приложения</div>';
+  document.body.innerHTML =
+    '<div style="padding:2rem;text-align:center">Ошибка инициализации приложения</div>';
 });
