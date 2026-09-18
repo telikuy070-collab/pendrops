@@ -1,153 +1,34 @@
-import { detectDay } from './day.js';
-import { parseCell, parseGroupCode, splitSubs } from './cell.js';
-import { norm } from './text.js';
-import { MAX_HEADER_SCAN_ROWS, MAX_DAY_LOOKAHEAD } from './constants.js';
+import { ParserEngine, parserEngine } from './parser/engine.ts';
 import { parseLessons } from './types/lesson.js';
-
-const HEADER_DAY_RE = /апта\s*күндөрү/i;
-
-/**
- * @typedef {{ col: number, code: string, subgroup: string, raw: string }} GroupRef
- * @typedef {{ dayCol: number, paraCol: number, timeCol: number, groups: GroupRef[], headerRow: number }} Block
- * @typedef {{ day: string, time: string, para: string, group: string, subgroup: string,
- *             subject: string, type: string, teacher: string, room: string, isExam: boolean }} Lesson
- */
-
-const cellAt = (rows, r, c) => {
-  if (r < 0 || r >= rows.length) return '';
-  const row = rows[r] || [];
-  return c >= 0 && c < row.length ? norm(row[c]) : '';
-};
-
-function findHeaderRows(rows) {
-  const out = [];
-  const limit = Math.min(rows.length, MAX_HEADER_SCAN_ROWS);
-  for (let i = 0; i < limit; i++) {
-    const r = rows[i] || [];
-    if (r.some((c) => HEADER_DAY_RE.test(String(c)))) out.push(i);
-  }
-  return out;
-}
-
-function extractBlocks(headerRow) {
-  const blocks = [];
-  let i = 0;
-  while (i < headerRow.length) {
-    if (HEADER_DAY_RE.test(String(headerRow[i] || ''))) {
-      const dayCol = i;
-      const paraCol = i + 1;
-      const timeCol = i + 2;
-      const groups = [];
-      let j = i + 3;
-      while (j < headerRow.length) {
-        const cell = norm(headerRow[j]);
-        if (HEADER_DAY_RE.test(cell)) break;
-        const code = parseGroupCode(cell);
-        if (code) groups.push({ col: j, ...code });
-        j++;
-      }
-      if (groups.length) blocks.push({ dayCol, paraCol, timeCol, groups });
-      i = j;
-    } else {
-      i++;
-    }
-  }
-  return blocks;
-}
-
-function expandBlockDays(rows, block) {
-  /** @type {{ row: number, day: string }[]} */
-  const days = [];
-  let r = block.headerRow + 1;
-  let lastDay = '';
-  const end = Math.min(rows.length, block.headerRow + MAX_DAY_LOOKAHEAD);
-  while (r < end) {
-    const dRaw = cellAt(rows, r, block.dayCol);
-    const d = detectDay(dRaw);
-    if (d) {
-      lastDay = d;
-      days.push({ row: r, day: d });
-      r++;
-      continue;
-    }
-    const hasContent =
-      cellAt(rows, r, block.paraCol) ||
-      cellAt(rows, r, block.timeCol) ||
-      block.groups.some((g) => cellAt(rows, r, g.col));
-    if (lastDay && hasContent) {
-      days.push({ row: r, day: lastDay });
-      r++;
-      continue;
-    }
-    if (!lastDay && !hasContent) {
-      r++;
-      continue;
-    }
-    r++;
-  }
-  return days;
-}
-
-function blockHasContent(rows, block, dayInfo) {
-  const { row } = dayInfo;
-  return Boolean(
-    cellAt(rows, row, block.paraCol) ||
-    cellAt(rows, row, block.timeCol) ||
-    block.groups.some((g) => cellAt(rows, row, g.col))
-  );
-}
 
 /**
  * Парсит один лист в плоский массив занятий.
+ * Делегирует к новому ParserEngine для обратной совместимости.
  * @param {any[][] | null | undefined} rows
  * @returns {Lesson[]}
  */
 export function parseSheetRows(rows) {
   if (!Array.isArray(rows) || !rows.length) return [];
-  const headerIdxs = findHeaderRows(rows);
-  const blocks = [];
-  for (const hi of headerIdxs) {
-    const header = rows[hi] || [];
-    for (const b of extractBlocks(header)) {
-      blocks.push({ ...b, headerRow: hi });
-    }
-  }
-
-  const lessons = [];
-  for (const block of blocks) {
-    const days = expandBlockDays(rows, block);
-    for (const info of days) {
-      if (!blockHasContent(rows, block, info)) continue;
-      const para = cellAt(rows, info.row, block.paraCol);
-      const time = cellAt(rows, info.row, block.timeCol);
-      for (const g of block.groups) {
-        const raw = cellAt(rows, info.row, g.col);
-        if (!raw) continue;
-        for (const part of splitSubs(raw)) {
-          const parsed = parseCell(part);
-          if (!parsed) continue;
-          lessons.push({
-            day: info.day,
-            time,
-            para,
-            group: g.code,
-            subgroup: g.subgroup,
-            subject: parsed.subject,
-            type: parsed.type,
-            teacher: parsed.teacher,
-            room: parsed.room,
-            isExam: parsed.isExam,
-          });
-        }
-      }
-    }
-  }
-  // Validate each lesson via Zod; filter out any that don't pass.
-  return parseLessons(lessons);
+  // Используем новый движок
+  const parsed = parserEngine.parseSheetRows(rows);
+  // Конвертируем в старый формат (без confidence/warnings)
+  return parseLessons(parsed.map(p => ({
+    day: p.day,
+    time: p.time,
+    para: p.para,
+    group: p.group,
+    subgroup: p.subgroup,
+    subject: p.subject,
+    type: p.type,
+    teacher: p.teacher,
+    room: p.room,
+    isExam: p.isExam,
+  })));
 }
 
 /**
  * Принимает SheetJS workbook, парсит все листы.
+ * Делегирует к новому ParserEngine для обратной совместимости.
  * @param {{ SheetNames?: string[], Sheets?: Record<string, any> } | null | undefined} workbook
  * @param {any} [xlsx] — опциональный инстанс XLSX (нужен для браузерного теста без window).
  * @returns {Record<string, Lesson[]>}
@@ -160,33 +41,47 @@ export function parseWorkbook(workbook, xlsx) {
     !workbook.Sheets
   )
     return {};
-  const lib = xlsx || globalThis.XLSX;
-  /** @type {Record<string, Lesson[]>} */
+
+  // Используем новый движок
+  const parsed = parserEngine.parseWorkbook(workbook, xlsx);
+  // Конвертируем в старый формат
   const result = {};
-  for (const name of workbook.SheetNames) {
-    const sheet = workbook.Sheets[name];
-    const rows = lib?.utils?.sheet_to_json
-      ? lib.utils.sheet_to_json(sheet, { header: 1, defval: '', blankrows: true, raw: true })
-      : sheetToJsonRows(sheet, lib);
-    result[name] = parseSheetRows(rows);
+  for (const [name, lessons] of Object.entries(parsed)) {
+    result[name] = parseLessons(lessons.map(p => ({
+      day: p.day,
+      time: p.time,
+      para: p.para,
+      group: p.group,
+      subgroup: p.subgroup,
+      subject: p.subject,
+      type: p.type,
+      teacher: p.teacher,
+      room: p.room,
+      isExam: p.isExam,
+    })));
   }
   return result;
 }
 
-function sheetToJsonRows(sheet, lib) {
-  const ref = sheet['!ref'];
-  if (!ref || !lib) return [];
-  const range = lib.utils.decode_range(ref);
-  if (!range) return [];
-  const out = [];
-  for (let r = range.s.r; r <= range.e.r; r++) {
-    const row = [];
-    for (let c = range.s.c; c <= range.e.c; c++) {
-      const addr = lib.utils.encode_cell({ r, c });
-      const cell = sheet[addr];
-      row.push(cell ? (cell.v ?? '') : '');
-    }
-    out.push(row);
-  }
-  return out;
+/**
+ * Новый API: парсит workbook с полной информацией (confidence, warnings).
+ * @param {{ SheetNames?: string[], Sheets?: Record<string, any> } | null | undefined} workbook
+ * @param {any} [xlsx]
+ * @returns {Record<string, import('./parser/engine.ts').ParsedLesson[]>}
+ */
+export function parseWorkbookDetailed(workbook, xlsx) {
+  return parserEngine.parseWorkbook(workbook, xlsx);
 }
+
+/**
+ * Новый API: парсит строки листа с полной информацией.
+ * @param {any[][]} rows
+ * @param {string} [sheetName]
+ * @returns {import('./parser/engine.ts').ParsedLesson[]}
+ */
+export function parseSheetRowsDetailed(rows, sheetName) {
+  return parserEngine.parseSheetRows(rows, sheetName);
+}
+
+// Реэкспорт для удобства
+export { ParserEngine, parserEngine } from './parser/engine.ts';

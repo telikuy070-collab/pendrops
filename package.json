@@ -20,6 +20,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:teacher": "tsc --noEmit -p tsconfig.teacher.json",
     "lint": "eslint . --fix && prettier --write .",
+    "analyze": "vite build --mode production && npx vite-bundle-analyzer dist",
     "prepare": "husky"
   },
   "engines": {
@@ -32,6 +33,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.6",
     "husky": "^9.1.7",
+    "jsdom": "^30.1.0",
     "lint-staged": "^16.4.0",
     "prettier": "^3.9.6",
     "typescript": "^5.9.0",
@@ -41,6 +43,7 @@
     "xlsx": "^0.18.5"
   },
   "dependencies": {
+    "@preact/signals": "^2.11.2",
     "@supabase/supabase-js": "^2.115.0",
     "zod": "^4.5.4"
   }

@@ -44,3 +44,47 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  # Post-deployment verification
+  verify-deployment:
+    name: Verify Deployment
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for deployment to propagate
+        run: sleep 30
+      - name: Check deployment health
+        run: |
+          URL="${{ steps.deployment.outputs.page_url }}"
+          echo "Checking deployment at: $URL"
+          # Check main page
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Main page returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+          echo "Main page: OK (HTTP 200)"
+          # Check manifest
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL/manifest.json")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Manifest returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+          echo "Manifest: OK (HTTP 200)"
+          # Check service worker
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL/sw.js")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Service Worker returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+          echo "Service Worker: OK (HTTP 200)"
+      - name: Verify SPA fallback (404.html)
+        run: |
+          URL="${{ steps.deployment.outputs.page_url }}"
+          # GitHub Pages serves 404.html for unknown routes in SPA mode
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL/nonexistent-route")
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "404" ]; then
+            echo "::warning::SPA fallback may not work correctly (HTTP $HTTP_CODE)"
+          else
+            echo "SPA fallback: OK"
+          fi

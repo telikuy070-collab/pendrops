@@ -188,8 +188,6 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
       allMatches.push({ match: m[0].trim(), index: m.index!, patternType: 'standard' });
     }
 
-    console.log('[DEBUG extractTeacher] allMatches:', allMatches);
-
     if (!allMatches.length) return null;
 
     // Фильтруем ложные срабатывания (например, "спорттук аянтча К")
@@ -231,8 +229,6 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
       return true;
     });
 
-    console.log('[DEBUG extractTeacher] validMatches:', validMatches);
-
     if (!validMatches.length) return null;
 
     // Для кыргызских имен предпочитаем более полные совпадения (с фамилией)
@@ -253,8 +249,6 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
     } else {
       return null;
     }
-
-    console.log('[DEBUG extractTeacher] candidate:', candidate);
 
     // Проверка: не является ли кандидат частичным совпадением (за ним следуют еще инициалы)
     // Находим позицию кандидата в нормализованном тексте

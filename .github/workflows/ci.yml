@@ -146,6 +146,34 @@ jobs:
           path: dist/
           retention-days: 7
 
+  # Bundle Analysis
+  analyze:
+    name: Bundle Analysis
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      - run: npx vite-bundle-analyzer dist --json > bundle-report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-report
+          path: bundle-report.json
+      - run: |
+          SIZE=$(cat bundle-report.json | jq '.totalSize')
+          if [ $SIZE -gt 250000 ]; then
+            echo "Bundle too large: $SIZE bytes"
+            exit 1
+          fi
+
   # Bundle size check
   bundle-size:
     name: Bundle Size Check

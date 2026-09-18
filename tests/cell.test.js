@@ -1,8 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { parseCell, parseGroupCode, splitSubs } from '../src/cell.js';
 import { TYPE_IDS } from '../src/constants.js';
+import { resetFieldExtractor } from '../src/parser/fieldExtractor.ts';
 
 describe('parseCell', () => {
+  beforeEach(() => {
+    resetFieldExtractor();
+  });
+
   it('detects kurator hour', () => {
     const r = parseCell('Куратордук саат');
     expect(r.subject).toBe('Кураторский час');

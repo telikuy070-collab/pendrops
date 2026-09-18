@@ -6,6 +6,8 @@
  * @typedef {{show: function(string, string): void}} Toast
  */
 
+import { escapeHtml } from '../text.js';
+
 /**
  * @param {AuthService} authService
  * @param {AdminService} adminService
@@ -150,8 +152,8 @@ export function createAdminView(authService, adminService, toast) {
       picked.classList.add('hidden');
     } catch (err) {
       console.error('[Admin] Publish failed:', err);
-      status.innerHTML = '❌ ' + (err.message || String(err));
-      toast?.show?.('Ошибка публикации: ' + (err.message || String(err)), 'bad');
+      status.textContent = '❌ ' + escapeHtml(err.message || String(err));
+      toast?.show?.('Ошибка публикации: ' + escapeHtml(err.message || String(err)), 'bad');
     } finally {
       publish.disabled = false;
     }

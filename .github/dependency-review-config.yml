@@ -1,0 +1,46 @@
+# Dependency Review Configuration
+# https://github.com/actions/dependency-review-action
+
+# Fail on high severity vulnerabilities
+fail-on-severity: high
+
+# Allow specific licenses (MIT, Apache-2.0, BSD, ISC are generally safe)
+allow-licenses:
+  - MIT
+  - Apache-2.0
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - ISC
+  - CC0-1.0
+  - Unlicense
+  - WTFPL
+
+# Deny specific licenses (GPL, AGPL, etc. - copyleft)
+deny-licenses:
+  - GPL-2.0
+  - GPL-3.0
+  - AGPL-3.0
+  - LGPL-2.1
+  - LGPL-3.0
+
+# Allow specific scopes (devDependencies are generally OK)
+allow-scopes:
+  - devDependencies
+
+# Block specific packages with known issues
+block-packages:
+  - name: "event-stream"
+    reason: "Compromised package (2018)"
+  - name: "flatmap-stream"
+    reason: "Malicious dependency of event-stream"
+  - name: "ua-parser-js"
+    version: ">=0.7.29 <0.7.30"
+    reason: "Supply chain attack (2021)"
+  - name: "coa"
+    version: ">=2.0.0 <2.1.0"
+    reason: "Supply chain attack (2021)"
+
+# Configuration for private registries (if needed)
+# private-registries:
+#   - url: "https://npm.pkg.github.com"
+#     token: ${{ secrets.GITHUB_TOKEN }}

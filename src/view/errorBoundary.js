@@ -31,6 +31,21 @@ const styles = `
   button { margin-top: 0.5rem; padding: 0.5rem 1rem; }
 `;
 
+/** Escape HTML to prevent XSS in fallback rendering. */
+function escapeHtml(s) {
+  return String(s ?? '').replace(
+    /[&<>"']/g,
+    (ch) =>
+      ({
+        '&': '&',
+        '<': '<',
+        '>': '>',
+        '"': '"',
+        "'": '&apos;',
+      })[ch]
+  );
+}
+
 /**
  * @typedef {Object} ErrorBoundaryDetail
  * @property {string} message - user-facing message
@@ -139,11 +154,13 @@ export class ErrorBoundary extends HTMLElement {
     } else {
       // Fallback: render directly (no style isolation)
       if (hasError) {
+        const errMsg = escapeHtml(this._detail?.originalError?.message || message);
+        const safeTitle = escapeHtml(title);
         this.innerHTML = `
           <style>${styles}</style>
           <div class="error-boundary" role="alert" aria-live="polite">
-            <h2>${title}</h2>
-            <p>${this._detail?.originalError?.message || message}</p>
+            <h2>${safeTitle}</h2>
+            <p>${errMsg}</p>
             <button type="button" class="error-reload">Перезагрузить</button>
           </div>
         `;

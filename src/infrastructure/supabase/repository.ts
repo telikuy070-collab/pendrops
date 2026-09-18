@@ -6,6 +6,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ScheduleData, Lesson, Sheet, Group } from '@core/domain/entities/types';
 import type { IScheduleRepository } from '@core/domain/repositories/ports';
 import { getSupabaseClient } from './client';
+import { toAppError } from '@core/domain/errors';
+import { withRetry } from '@shared/retry';
+import { logger } from '@shared/logger';
+import { CircuitBreaker } from '@shared/circuitBreaker';
 
 // Database row types (match your Supabase schema)
 interface LessonRow {
@@ -37,28 +41,34 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
   private subscribers: Set<(data: ScheduleData) => void> = new Set();
   private cachedData: ScheduleData | null = null;
   private realtimeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempt = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private isDestroyed = false;
+  private realtimeBreaker = new CircuitBreaker(5, 60000);
 
   constructor() {
     this.client = getSupabaseClient();
   }
 
   async loadFull(): Promise<ScheduleData> {
-    // Load lessons with all related data
-    const { data: lessons, error } = await this.client
-      .from('lessons')
-      .select('*')
-      .order('day_order')
-      .order('time');
+    return withRetry(async () => {
+      // Load lessons with all related data
+      const { data: lessons, error } = await this.client
+        .from('lessons')
+        .select('*')
+        .order('day_order')
+        .order('time');
 
-    if (error) throw error;
+      if (error) throw toAppError(error);
 
-    // Load version
-    const { data: versionData } = await this.client
-      .from('schedule_version')
-      .select('version, updated_at')
-      .single();
+      // Load version
+      const { data: versionData } = await this.client
+        .from('schedule_version')
+        .select('version, updated_at')
+        .single();
 
-    return this.transformRows(lessons || [], versionData);
+      return this.transformRows(lessons || [], versionData);
+    }, { retries: 3, baseDelay: 1000, retryable: (e) => e.message.includes('network') || e.message.includes('timeout') });
   }
 
   private transformRows(rows: LessonRow[], versionData: VersionRow | null): ScheduleData {
@@ -168,33 +178,84 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
       if (this.subscribers.size === 0 && this.realtimeChannel) {
         this.client.removeChannel(this.realtimeChannel);
         this.realtimeChannel = null;
+        
+        // Clean up reconnection timer when no more subscribers
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+        this.reconnectAttempt = 0;
       }
     };
   }
 
   private setupRealtime(): void {
-    this.realtimeChannel = this.client
-      .channel('schedule_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lessons' }, (payload) => {
-        // Ignore initial system event from Supabase realtime connection handshake
-        // payload.eventType can be 'INSERT' | 'UPDATE' | 'DELETE' | 'SYSTEM'
-        if ((payload as any).eventType === 'SYSTEM') return;
-        this.handleRealtimeChange();
-      })
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'schedule_version' },
-        (payload) => {
-          // Ignore initial system event from Supabase realtime connection handshake
-          if ((payload as any).eventType === 'SYSTEM') return;
-          this.handleRealtimeChange();
+    this.realtimeBreaker.execute(() => this.doSetupRealtime())
+      .catch((err) => {
+        logger.error('[Supabase] Failed to setup realtime', { context: 'realtime_setup' }, toAppError(err));
+        if (!this.isDestroyed) {
+          this.scheduleReconnect();
         }
-      )
-      .subscribe();
+      });
   }
 
-  private async handleRealtimeChange(): Promise<void> {
-    // Debounce: Supabase may fire multiple events for a single change
+  private async doSetupRealtime(): Promise<void> {
+    if (this.isDestroyed) return;
+
+    // Use retry utility for initial subscription attempt
+    const attemptSubscription = async (): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        this.realtimeChannel = this.client
+          .channel('schedule_changes')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'lessons' }, (payload) => {
+            if ((payload as any).eventType === 'SYSTEM') return;
+            this.handleRealtimeChange();
+          })
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'schedule_version' },
+            (payload) => {
+              if ((payload as any).eventType === 'SYSTEM') return;
+              this.handleRealtimeChange();
+            }
+          )
+          .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              logger.info('[Realtime] Subscribed to schedule_changes');
+              this.reconnectAttempt = 0;
+              resolve();
+            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+              logger.warn('[Realtime] Subscription status', { status });
+              reject(new Error(`Realtime subscription failed: ${status}`));
+            }
+          });
+      });
+    };
+
+    await withRetry(attemptSubscription, { retries: 3, baseDelay: 1000, retryable: (e) => e.message.includes('network') || e.message.includes('timeout') || e.message.includes('Realtime subscription failed') });
+  }
+
+  private scheduleReconnect(): void {
+    if (this.isDestroyed) return;
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+    }
+
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempt), 30000);
+    this.reconnectAttempt++;
+
+    logger.info('[Realtime] Reconnecting', { delay, attempt: this.reconnectAttempt });
+
+    this.reconnectTimer = setTimeout(() => {
+      if (!this.isDestroyed) {
+        this.setupRealtime();
+      }
+    }, delay);
+  }
+
+  private handleRealtimeChange(): void {
+    // existing debounce logic
     if (this.realtimeDebounceTimer) {
       clearTimeout(this.realtimeDebounceTimer);
     }
@@ -205,63 +266,131 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
           cb(fresh);
         }
       } catch (err) {
-        console.error('[Supabase] Realtime refresh failed:', err);
+        logger.error('[Supabase] Realtime refresh failed', { context: 'realtime_refresh' }, toAppError(err));
       }
     }, 100);
   }
 
-  async getVersion(): Promise<{ version: string; updatedAt: string }> {
-    const { data, error } = await this.client
-      .from('schedule_version')
-      .select('version, updated_at')
-      .single();
+  /**
+   * Clean up all resources - call when repository is no longer needed
+   */
+  destroy(): void {
+    this.isDestroyed = true;
 
-    if (error) throw error;
-    return { version: data.version, updatedAt: data.updated_at };
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    if (this.realtimeDebounceTimer) {
+      clearTimeout(this.realtimeDebounceTimer);
+      this.realtimeDebounceTimer = null;
+    }
+
+    if (this.realtimeChannel) {
+      this.client.removeChannel(this.realtimeChannel);
+      this.realtimeChannel = null;
+    }
+
+    this.subscribers.clear();
+    this.cachedData = null;
+    this.reconnectAttempt = 0;
+  }
+
+  async getVersion(): Promise<{ version: string; updatedAt: string }> {
+    return withRetry(async () => {
+      const { data, error } = await this.client
+        .from('schedule_version')
+        .select('version, updated_at')
+        .single();
+
+      if (error) throw toAppError(error);
+      return { version: data.version, updatedAt: data.updated_at };
+    }, { retries: 3, baseDelay: 1000, retryable: (e) => e.message.includes('network') || e.message.includes('timeout') });
+  }
+
+  async getChangesSince(version: string): Promise<{ lessons: Lesson[]; version: string }> {
+    return withRetry(async () => {
+      // Get the updated_at timestamp for the given version to use as cursor
+      const { data: versionData, error: versionError } = await this.client
+        .from('schedule_version')
+        .select('updated_at')
+        .eq('version', version)
+        .single();
+
+      if (versionError) throw versionError;
+
+      const cursor = versionData?.updated_at || new Date(0).toISOString();
+
+      // Fetch lessons updated after the cursor
+      const { data: lessons, error } = await this.client
+        .from('lessons')
+        .select('*')
+        .gt('updated_at', cursor)
+        .order('updated_at');
+
+      if (error) throw toAppError(error);
+
+      // Get current version
+      const { data: currentVersionData } = await this.client
+        .from('schedule_version')
+        .select('version')
+        .single();
+
+      // Transform rows to Lesson entities
+      const transformedLessons: Lesson[] = (lessons || []).map((row: LessonRow) => ({
+        id: row.id,
+        sheetId: row.sheet_id,
+        day: row.day as Lesson['day'],
+        dayOrder: row.day_order,
+        time: row.time,
+        para: row.para,
+        group: row.group_code,
+        subgroup: row.subgroup || '',
+        subject: row.subject,
+        type: row.type as Lesson['type'],
+        teacher: row.teacher || '',
+        room: row.room || '',
+        isExam: row.is_exam,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+
+      return {
+        lessons: transformedLessons,
+        version: currentVersionData?.version || version,
+      };
+    }, { retries: 3, baseDelay: 1000, retryable: (e) => e.message.includes('network') || e.message.includes('timeout') });
   }
 
   async publish(lessons: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[]): Promise<void> {
-    const now = new Date().toISOString();
-    const version = `v${Date.now()}`;
+    return withRetry(async () => {
+      const version = `v${Date.now()}`;
 
-    // Start transaction: delete all, insert new, update version
-    const { error: deleteError } = await this.client
-      .from('lessons')
-      .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+      // Call Edge Function for secure server-side publishing with service_role
+      const { data, error } = await this.client.functions.invoke('publish-schedule', {
+        body: {
+          lessons: lessons.map(l => ({
+            sheet_id: l.sheetId,
+            day: l.day,
+            day_order: l.dayOrder,
+            time: l.time,
+            para: l.para,
+            group_code: l.group,
+            subgroup: l.subgroup || '',
+            subject: l.subject,
+            type: l.type,
+            teacher: l.teacher || '',
+            room: l.room || '',
+            is_exam: l.isExam,
+          })),
+          version,
+        },
+      });
 
-    if (deleteError) throw deleteError;
-
-    // Insert new lessons in batches
-    const batchSize = 500;
-    for (let i = 0; i < lessons.length; i += batchSize) {
-      const batch = lessons.slice(i, i + batchSize).map((l) => ({
-        sheet_id: l.sheetId,
-        day: l.day,
-        day_order: l.dayOrder,
-        time: l.time,
-        para: l.para,
-        group_code: l.group,
-        subgroup: l.subgroup || null,
-        subject: l.subject,
-        type: l.type,
-        teacher: l.teacher || null,
-        room: l.room || null,
-        is_exam: l.isExam,
-        created_at: now,
-        updated_at: now,
-      }));
-
-      const { error: insertError } = await this.client.from('lessons').insert(batch);
-      if (insertError) throw insertError;
-    }
-
-    // Update version
-    const { error: versionError } = await this.client
-      .from('schedule_version')
-      .upsert({ id: 1, version, updated_at: now });
-
-    if (versionError) throw versionError;
+      if (error) throw new Error(error.message || 'Failed to publish schedule');
+      if (data?.error) throw new Error(data.error);
+    }, { retries: 3, baseDelay: 1000, retryable: (e) => e.message.includes('network') || e.message.includes('timeout') });
   }
 
   async publishFromWorkbook(workbook: {

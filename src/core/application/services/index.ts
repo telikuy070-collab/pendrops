@@ -44,6 +44,14 @@ export class ScheduleService {
     return checkUpdatesUseCase(this.repository, currentVersion);
   }
 
+  /** Apply incremental changes to cached schedule */
+  async applyIncrementalChanges(changes: Lesson[]): Promise<void> {
+    // This will be handled by the presentation layer merging changes
+    // The repository's subscribe will handle full reload via realtime
+    // For now, we just return the changes for the caller to handle
+    return;
+  }
+
   async getFilteredLessons(
     prefs: UserPreferences,
     filters: { day?: string; search?: string }

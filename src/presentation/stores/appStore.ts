@@ -10,7 +10,7 @@ import type {
   UserPreferences,
   DayName,
 } from '@core/domain/entities/types';
-import { createStore, signal, computed, type Store, type Signal, type Computed } from './signals';
+import { signal, computed, effect, batch } from '@preact/signals';
 
 export interface AppState {
   schedule: ScheduleData | null;
@@ -30,30 +30,32 @@ export interface AppState {
   updateAvailable: { version: string; updatedAt: string } | null;
 }
 
-const initialState: AppState = {
-  schedule: null,
-  filteredLessons: [],
-  currentFilters: { day: '', search: '' },
-  ui: {
-    loading: true,
-    error: null,
-    showInstallPrompt: false,
-    activeModal: null,
-  },
-  preferences: {
-    currentSheetId: '',
-    currentGroup: '',
-    activeSubgroup: '',
-    hiddenSheets: [],
-  },
-  isAdmin: false,
-  updateAvailable: null,
+const initialPreferences: UserPreferences = {
+  currentSheetId: '',
+  currentGroup: '',
+  activeSubgroup: '',
+  hiddenSheets: [],
 };
 
-export const appStore = createStore<AppState>(initialState);
+const initialUI = {
+  loading: true,
+  error: null as string | null,
+  showInstallPrompt: false,
+  activeModal: null as string | null,
+};
+
+const initialFilters = { day: '', search: '' };
+
+// Individual signals for each piece of state
+export const schedule = signal<ScheduleData | null>(null);
+export const preferences = signal<UserPreferences>(initialPreferences);
+export const ui = signal(initialUI);
+export const currentFilters = signal(initialFilters);
+export const isAdmin = signal(false);
+export const updateAvailable = signal<{ version: string; updatedAt: string } | null>(null);
 
 // Selectors for common derived state
-export const scheduleData = computed(() => appStore.get('schedule').value);
+export const scheduleData = computed(() => schedule.value);
 export const lessons = computed(() => {
   const sched = scheduleData.value;
   if (!sched) return [];
@@ -67,7 +69,7 @@ export const sheets = computed(() => {
 
 export const groups = computed(() => {
   const sched = scheduleData.value;
-  const prefs = appStore.get('preferences').value;
+  const prefs = preferences.value;
   if (!sched || !prefs.currentSheetId) return [];
   const sheetLessons = sched.sheets.get(prefs.currentSheetId) || [];
   const groupMap = new Map<string, { code: string; count: number; subgroups: Set<string> }>();
@@ -95,13 +97,13 @@ export const groups = computed(() => {
 
 export const currentSheet = computed(() => {
   const sched = scheduleData.value;
-  const prefs = appStore.get('preferences').value;
+  const prefs = preferences.value;
   if (!sched || !prefs.currentSheetId) return null;
   return sched.sheetsMeta.find((s) => s.id === prefs.currentSheetId) || null;
 });
 
 export const currentGroup = computed(() => {
-  const prefs = appStore.get('preferences').value;
+  const prefs = preferences.value;
   const groupsList = groups.value;
   if (!prefs.currentGroup) return null;
   return groupsList.find((g) => g.code === prefs.currentGroup) || null;
@@ -122,8 +124,8 @@ function parseGroupSelection(selected: string): { code: string; subgroup: string
 
 export const filteredLessons = computed(() => {
   const allLessons = lessons.value;
-  const prefs = appStore.get('preferences').value;
-  const filters = appStore.get('currentFilters').value;
+  const prefs = preferences.value;
+  const filters = currentFilters.value;
 
   let result = allLessons;
 
@@ -193,51 +195,72 @@ export const isToday = (day: string) => day === todayName.value;
 // Actions
 export const actions = {
   setSchedule(data: ScheduleData) {
-    appStore.set('schedule', data);
-    // Sync preferences with schedule
-    const prefs = appStore.get('preferences').value;
-    const firstSheet = data.sheetsMeta[0];
-    if (!prefs.currentSheetId && firstSheet) {
-      actions.setPreference('currentSheetId', firstSheet.id);
-    }
+    batch(() => {
+      schedule.value = data;
+      ui.value = { ...ui.value, loading: false, error: null };
+      // Sync preferences with schedule
+      const prefs = preferences.value;
+      const firstSheet = data.sheetsMeta[0];
+      if (!prefs.currentSheetId && firstSheet) {
+        preferences.value = { ...prefs, currentSheetId: firstSheet.id };
+      }
+    });
   },
 
   setPreference<K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) {
-    appStore.set('preferences', (prev) => ({ ...prev, [key]: value }));
+    batch(() => {
+      preferences.value = { ...preferences.value, [key]: value };
+    });
   },
 
-  setFilter<K extends keyof AppState['currentFilters']>(
+  setFilter<K extends keyof typeof initialFilters>(
     key: K,
-    value: AppState['currentFilters'][K]
+    value: typeof initialFilters[K]
   ) {
-    appStore.set('currentFilters', (prev) => ({ ...prev, [key]: value }));
+    batch(() => {
+      currentFilters.value = { ...currentFilters.value, [key]: value };
+    });
   },
 
   setLoading(loading: boolean) {
-    appStore.set('ui', (prev) => ({ ...prev, loading }));
+    batch(() => {
+      ui.value = { ...ui.value, loading };
+    });
   },
 
   setError(error: string | null) {
-    appStore.set('ui', (prev) => ({ ...prev, error }));
+    batch(() => {
+      ui.value = { ...ui.value, error };
+    });
   },
 
   openModal(modal: string) {
-    appStore.set('ui', (prev) => ({ ...prev, activeModal: modal }));
+    batch(() => {
+      ui.value = { ...ui.value, activeModal: modal };
+    });
   },
 
   closeModal() {
-    appStore.set('ui', (prev) => ({ ...prev, activeModal: null }));
+    batch(() => {
+      ui.value = { ...ui.value, activeModal: null };
+    });
   },
 
-  setAdmin(isAdmin: boolean) {
-    appStore.set('isAdmin', isAdmin);
+  setAdmin(admin: boolean) {
+    batch(() => {
+      isAdmin.value = admin;
+    });
   },
 
   setUpdateAvailable(update: { version: string; updatedAt: string } | null) {
-    appStore.set('updateAvailable', update);
+    batch(() => {
+      updateAvailable.value = update;
+    });
   },
 
   resetFilters() {
-    appStore.set('currentFilters', { day: '', search: '' });
+    batch(() => {
+      currentFilters.value = { day: '', search: '' };
+    });
   },
 };

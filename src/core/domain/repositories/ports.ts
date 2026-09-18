@@ -14,6 +14,9 @@ export interface IScheduleRepository {
   /** Get current version for update checks */
   getVersion(): Promise<{ version: string; updatedAt: string }>;
 
+  /** Get incremental changes since a version */
+  getChangesSince(version: string): Promise<{ lessons: Lesson[]; version: string }>;
+
   /** Admin: publish new schedule (replace all) */
   publish(lessons: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[]): Promise<void>;
 

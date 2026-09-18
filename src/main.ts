@@ -10,16 +10,19 @@ import { SupabaseScheduleRepository } from '@infrastructure/supabase/repository'
 import { SupabaseAuthProvider } from '@infrastructure/supabase/auth';
 import { HybridStorage } from '@infrastructure/storage/hybrid';
 import { ExcelFileParser } from '@infrastructure/github/parser';
-import { appStore, actions, filteredLessons } from '@presentation/stores/appStore';
+import { actions, filteredLessons, schedule, preferences, ui, todayName } from '@presentation/stores/appStore';
 import { createToast } from './view/toast.js';
 import { createScheduleView } from './view/scheduleView.js';
 import { createAdminView } from './view/adminView.js';
 import { initBrandGesture } from '@presentation/gestures/brandGesture';
 import { escapeHtml } from './text.js';
-import { todayName } from '@presentation/stores/appStore';
+import { effect } from '@presentation/stores/signals';
 import type { PreferencesService as PrefsServiceType } from '@core/application/services';
 import { reportError } from './view/errorBoundary.js';
+import { toAppError } from '@core/domain/errors';
+import { logger } from '@shared/logger';
 import { getSupabaseClient } from '@infrastructure/supabase/client.js';
+import type { ScheduleData } from '@core/domain/entities/types';
 // Force Supabase bundle inclusion
 import '@supabase/supabase-js';
 
@@ -57,8 +60,8 @@ export async function bootstrap(): Promise<void> {
     actions.setPreference('activeSubgroup', prefs.activeSubgroup);
 
     // Load schedule (instant from cache, then fresh from DB)
-    const schedule = await scheduleService.load();
-    actions.setSchedule(schedule);
+    const scheduleData = await scheduleService.load();
+    actions.setSchedule(scheduleData);
 
     // Subscribe to realtime updates
     let initialLoad = true;
@@ -77,7 +80,7 @@ export async function bootstrap(): Promise<void> {
     // Check for updates periodically
     startUpdateChecker(scheduleService);
   } catch (err) {
-    console.error('[App] Bootstrap failed:', err);
+    logger.error('[App] Bootstrap failed', { context: 'bootstrap' }, err as Error);
     actions.setError('Не удалось загрузить расписание');
     reportError(err, 'Не удалось загрузить расписание');
   } finally {
@@ -110,9 +113,14 @@ export async function bootstrap(): Promise<void> {
     const quickPick = document.getElementById('quickPick');
 
     // Bind store to view
-    appStore.subscribe((state) => {
-      console.log('[ui] subscribe triggered, prefs:', state.preferences);
-      console.log('[ui] filtered lessons:', filteredLessons.value?.length);
+    effect(() => {
+      const state = {
+        schedule: schedule.value,
+        preferences: preferences.value,
+        ui: ui.value,
+      };
+      logger.debug('[ui] subscribe triggered', { preferences: state.preferences });
+      logger.debug('[ui] filtered lessons', { count: filteredLessons.value?.length });
 
       if (state.schedule) {
         scheduleView.render(filteredLessons.value, {
@@ -167,7 +175,7 @@ export async function bootstrap(): Promise<void> {
     const sheetList = document.getElementById('sheetList');
 
     sheetBtn?.addEventListener('click', () => {
-      renderSheetPicker(prefsService);
+      renderSheetPicker(schedule.value!);
       actions.openModal('sheet');
     });
     sheetModal
@@ -183,7 +191,7 @@ export async function bootstrap(): Promise<void> {
     const groupList = document.getElementById('groupList');
 
     groupBtn?.addEventListener('click', () => {
-      renderGroupPicker(prefsService);
+      renderGroupPicker(schedule.value!);
       actions.openModal('group');
     });
     groupModal
@@ -199,7 +207,7 @@ export async function bootstrap(): Promise<void> {
     const subgroupList = document.getElementById('subgroupList');
 
     subgroupBtn?.addEventListener('click', () => {
-      renderSubgroupPicker(prefsService);
+      renderSubgroupPicker(schedule.value!);
       actions.openModal('subgroup');
     });
     subgroupModal
@@ -255,15 +263,14 @@ export async function bootstrap(): Promise<void> {
     );
   }
 
-  function renderSheetPicker(prefsService: PrefsServiceType): void {
+  function renderSheetPicker(scheduleData: ScheduleData): void {
     const sheetList = document.getElementById('sheetList');
-    const sched = appStore.get('schedule').value;
-    if (!sched || !sheetList) return;
+    if (!scheduleData || !sheetList) return;
 
-    sheetList.innerHTML = sched.sheetsMeta
+    sheetList.innerHTML = scheduleData.sheetsMeta
       .map((sheet) => {
-        const count = sched.sheets.get(sheet.id)?.length || 0;
-        const active = sheet.id === appStore.get('preferences').value.currentSheetId;
+        const count = scheduleData.sheets.get(sheet.id)?.length || 0;
+        const active = sheet.id === preferences.value.currentSheetId;
         return `<button class="picker-item ${active ? 'active' : ''}" data-sheet="${escapeHtml(sheet.id)}">
       <span>${escapeHtml(sheet.name)}</span>
       <span class="picker-item-meta">${count} ${count === 1 ? 'запись' : 'записей'}</span>
@@ -274,7 +281,7 @@ export async function bootstrap(): Promise<void> {
     sheetList.querySelectorAll('.picker-item').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const sheetId = (btn as HTMLElement).dataset.sheet!;
-        console.log('[picker] sheet selected:', sheetId);
+        logger.info('[picker] sheet selected', { sheetId });
         actions.setPreference('currentSheetId', sheetId);
         actions.setPreference('currentGroup', '');
         actions.setPreference('activeSubgroup', '');
@@ -284,13 +291,12 @@ export async function bootstrap(): Promise<void> {
     });
   }
 
-  function renderGroupPicker(prefsService: PrefsServiceType): void {
+  function renderGroupPicker(scheduleData: ScheduleData): void {
     const groupList = document.getElementById('groupList');
-    const sched = appStore.get('schedule').value;
-    const prefs = appStore.get('preferences').value;
-    if (!sched || !groupList || !prefs.currentSheetId) return;
+    const prefs = preferences.value;
+    if (!scheduleData || !groupList || !prefs.currentSheetId) return;
 
-    const groups = Array.from(sched.groups.values()).filter(
+    const groups = Array.from(scheduleData.groups.values()).filter(
       (g) => g.sheetId === prefs.currentSheetId
     );
 
@@ -307,7 +313,7 @@ export async function bootstrap(): Promise<void> {
     groupList.querySelectorAll('.picker-item').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const groupCode = (btn as HTMLElement).dataset.group!;
-        console.log('[picker] group selected:', groupCode);
+        logger.info('[picker] group selected', { groupCode });
         actions.setPreference('currentGroup', groupCode);
         actions.setPreference('activeSubgroup', '');
         await prefsService.save({ currentGroup: groupCode, activeSubgroup: '' });
@@ -316,13 +322,12 @@ export async function bootstrap(): Promise<void> {
     });
   }
 
-  function renderSubgroupPicker(prefsService: PrefsServiceType): void {
+  function renderSubgroupPicker(scheduleData: ScheduleData): void {
     const subgroupList = document.getElementById('subgroupList');
-    const sched = appStore.get('schedule').value;
-    const prefs = appStore.get('preferences').value;
-    if (!sched || !subgroupList || !prefs.currentGroup) return;
+    const prefs = preferences.value;
+    if (!scheduleData || !subgroupList || !prefs.currentGroup) return;
 
-    const lessons = sched.sheets.get(prefs.currentSheetId!) || [];
+    const lessons = scheduleData.sheets.get(prefs.currentSheetId!) || [];
     const groupLessons = lessons.filter((l) => l.group === prefs.currentGroup);
     const subgroups = Array.from(new Set(groupLessons.map((l) => l.subgroup).filter(Boolean))).sort(
       (a, b) => {
@@ -352,7 +357,7 @@ export async function bootstrap(): Promise<void> {
     subgroupList.querySelectorAll('.picker-item').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const subgroup = (btn as HTMLElement).dataset.subgroup!;
-        console.log('[picker] subgroup selected:', subgroup);
+        logger.info('[picker] subgroup selected', { subgroup });
         actions.setPreference('activeSubgroup', subgroup);
         await prefsService.save({ activeSubgroup: subgroup });
         actions.closeModal();
@@ -362,12 +367,12 @@ export async function bootstrap(): Promise<void> {
 
   async function handlePullRefresh(scheduleService: ScheduleService): Promise<void> {
     toast?.show('Проверяю обновления...', 'ok');
-    const currentVersion = appStore.get('schedule').value?.version || '';
+    const currentVersion = schedule.value?.version || '';
     const { hasUpdate } = await scheduleService.checkUpdates(currentVersion);
 
     if (hasUpdate) {
-      const schedule = await scheduleService.load();
-      actions.setSchedule(schedule);
+      const scheduleData = await scheduleService.load();
+      actions.setSchedule(scheduleData);
       toast?.show('Расписание обновлено', 'ok');
     } else {
       toast?.show('Обновлений нет', 'ok');
@@ -378,7 +383,7 @@ export async function bootstrap(): Promise<void> {
     // Check on visibility change
     document.addEventListener('visibilitychange', async () => {
       if (document.visibilityState === 'visible') {
-        const currentVersion = appStore.get('schedule').value?.version || '';
+        const currentVersion = schedule.value?.version || '';
         const { hasUpdate, version, updatedAt } =
           await scheduleService.checkUpdates(currentVersion);
         if (hasUpdate) {
@@ -390,7 +395,7 @@ export async function bootstrap(): Promise<void> {
     // Periodic check every 5 minutes
     setInterval(
       async () => {
-        const currentVersion = appStore.get('schedule').value?.version || '';
+        const currentVersion = schedule.value?.version || '';
         const { hasUpdate, version, updatedAt } =
           await scheduleService.checkUpdates(currentVersion);
         if (hasUpdate) {
@@ -414,11 +419,11 @@ function registerServiceWorker(): void {
       })
       .then((reg) => {
         if (import.meta.env.DEV) {
-          console.log('[SW] Registered:', reg.scope);
+          logger.debug('[SW] Registered', { scope: reg.scope });
         }
       })
       .catch((err) => {
-        console.error('[SW] Registration failed:', err);
+        logger.error('[SW] Registration failed', { context: 'service_worker' }, err as Error);
       });
   }
 }
@@ -426,7 +431,7 @@ function registerServiceWorker(): void {
 // Start the app - register SW independently (runs even if bootstrap fails)
 registerServiceWorker();
 bootstrap().catch((err) => {
-  console.error('[App] Fatal error:', err);
+  logger.error('[App] Fatal error', { context: 'bootstrap' }, err as Error);
   document.body.innerHTML =
     '<div style="padding:2rem;text-align:center">Ошибка инициализации приложения</div>';
 });

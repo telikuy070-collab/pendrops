@@ -1,0 +1,9 @@
+{
+    "chat.mcp.serverSampling": {
+        "pendrops/.vscode/mcp.json: supabase": {
+            "allowedModels": [
+                "copilot/auto"
+            ]
+        }
+    }
+}

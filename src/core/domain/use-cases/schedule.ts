@@ -39,14 +39,23 @@ export function subscribeScheduleUseCase(
   return repository.subscribe(onUpdate);
 }
 
-/** Check for updates (version comparison) */
+/** Check for updates (version comparison) with incremental sync support */
 export async function checkUpdatesUseCase(
   repository: IScheduleRepository,
   currentVersion: string
-): Promise<{ hasUpdate: boolean; version: string; updatedAt: string }> {
+): Promise<{ hasUpdate: boolean; version: string; updatedAt: string; changes?: Lesson[] }> {
   const remote = await repository.getVersion();
+  if (remote.version !== currentVersion) {
+    const changes = await repository.getChangesSince(currentVersion);
+    return {
+      hasUpdate: true,
+      version: remote.version,
+      updatedAt: remote.updatedAt,
+      changes: changes.lessons,
+    };
+  }
   return {
-    hasUpdate: remote.version !== currentVersion,
+    hasUpdate: false,
     version: remote.version,
     updatedAt: remote.updatedAt,
   };

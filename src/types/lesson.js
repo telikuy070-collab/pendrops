@@ -20,6 +20,8 @@ import { TYPE_IDS } from '../constants.js';
  * - time must match "HH:MM-HH:MM"
  * - type must be one of the known TYPE_IDS
  * - isExam defaults to false
+ * - confidence: 0-1 weighted score based on field extraction confidence
+ * - warnings: array of warning strings for low-confidence fields
  */
 export const LessonSchema = z.object({
   day: z.string().min(1, 'day required'),
@@ -35,6 +37,8 @@ export const LessonSchema = z.object({
   teacher: z.string().optional(),
   room: z.string().optional(),
   isExam: z.preprocess((v) => v === true || v === 'true' || v === 1, z.boolean().default(false)),
+  confidence: z.number().min(0).max(1).default(0),
+  warnings: z.array(z.string()).default([]),
   /**
    * Internal: parsed time cache, populated lazily by the view layer.
    * Not validated strictly — it's derived data.

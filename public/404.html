@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PenDrops — Расписание мед. колледжа</title>
+  <meta name="description" content="Расписание мед. колледжа из Excel-файла. Работает офлайн как PWA.">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <meta name="theme-color" content="#0f172a">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1rem; }
+    .container { text-align: center; max-width: 400px; }
+    .logo { font-size: 3rem; margin-bottom: 1rem; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    p { color: #94a3b8; margin-bottom: 1.5rem; }
+    .btn { background: #3b82f6; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-size: 1rem; cursor: pointer; text-decoration: none; display: inline-block; }
+    .btn:hover { background: #2563eb; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">📅</div>
+    <h1>PenDrops</h1>
+    <p>Расписание мед. колледжа. Загрузка...</p>
+    <a href="./" class="btn">Перейти к расписанию</a>
+  </div>
+  <script>
+    // SPA fallback for GitHub Pages
+    // Redirects to index.html with the current path preserved
+    (function() {
+      var path = window.location.pathname;
+      var search = window.location.search;
+      var hash = window.location.hash;
+      // Don't redirect if already at root or if it's a static asset
+      if (path === '/' || path.endsWith('/') ||
+          path.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|json|xls|xlsx|csv|woff|woff2)$/)) {
+        return;
+      }
+      // Store the intended path for the app to handle
+      sessionStorage.setItem('pendrops-spa-redirect', path + search + hash);
+      window.location.href = './' + search + hash;
+    })();
+  </script>
+</body>
+</html>
