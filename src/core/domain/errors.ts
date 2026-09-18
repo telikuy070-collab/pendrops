@@ -12,10 +12,14 @@ export abstract class AppError extends Error {
   ) {
     super(userMessage);
     this.name = this.constructor.name;
-    // Maintains proper stack trace in V8 environments
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
+
+    // Maintains proper stack trace in V8 environments without requiring Node typings.
+    const captureStackTrace = (
+      Error as ErrorConstructor & {
+        captureStackTrace?: (targetObject: object, constructorOpt?: Function) => void;
+      }
+    ).captureStackTrace;
+    captureStackTrace?.(this, this.constructor);
   }
 }
 
