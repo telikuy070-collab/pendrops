@@ -1,0 +1,87 @@
+{
+  "formatId": "generic",
+  "name": "Generic Schedule Format",
+  "version": "1.0.0",
+  "detection": {
+    "headerKeywords": [
+      "day",
+      "день",
+      "день недели",
+      "schedule",
+      "расписание",
+      "time",
+      "время",
+      "period",
+      "пара",
+      "lesson",
+      "занятие"
+    ],
+    "minHeaderRow": 0,
+    "maxHeaderRow": 50,
+    "requiredColumns": []
+  },
+  "structure": {
+    "header": {
+      "dayColumn": "auto",
+      "paraColumn": "auto",
+      "timeColumn": "auto",
+      "groupColumnsStart": "auto",
+      "groupCodePattern": "^[A-Za-zА-Яа-я0-9\\-]+"
+    },
+    "dayNames": {
+      "ru": [
+        "Понедельник",
+        "Вторник",
+        "Среда",
+        "Четверг",
+        "Пятница",
+        "Суббота",
+        "Воскресенье"
+      ],
+      "en": [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday"
+      ],
+      "short": [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat",
+        "Sun"
+      ]
+    },
+    "timeFormat": "HH:MM-HH:MM",
+    "paraFormat": "\\d+"
+  },
+  "parsing": {
+    "skipEmptyRows": true,
+    "skipEmptyColumns": true,
+    "mergedCellsStrategy": "fill_down",
+    "subgroupSeparator": "/",
+    "subgroupInGroupCode": false,
+    "subgroupPattern": ""
+  },
+  "transforms": [
+    {
+      "type": "trim_whitespace",
+      "params": {}
+    },
+    {
+      "type": "normalize_case",
+      "params": {
+        "fields": [
+          "subject",
+          "teacher",
+          "room"
+        ]
+      }
+    }
+  ]
+}

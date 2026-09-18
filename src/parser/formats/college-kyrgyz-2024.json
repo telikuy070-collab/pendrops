@@ -1,0 +1,110 @@
+{
+  "formatId": "college-kyrgyz-2024",
+  "name": "Кыргызский медицинский колледж 2024",
+  "version": "1.0.0",
+  "detection": {
+    "headerKeywords": [
+      "апта күндөрү",
+      "апта күнү",
+      "дни недели",
+      "дни недели",
+      "schedule",
+      "расписание"
+    ],
+    "minHeaderRow": 0,
+    "maxHeaderRow": 30,
+    "requiredColumns": [
+      "апта күндөрү"
+    ]
+  },
+  "structure": {
+    "header": {
+      "dayColumn": "auto",
+      "paraColumn": "auto",
+      "timeColumn": "auto",
+      "groupColumnsStart": "auto",
+      "groupCodePattern": "^[А-ЯA-Z]{2,3}-\\d-\\d{2}"
+    },
+    "dayNames": {
+      "ru": [
+        "Понедельник",
+        "Вторник",
+        "Среда",
+        "Четверг",
+        "Пятница",
+        "Суббота",
+        "Воскресенье"
+      ],
+      "ky": [
+        "Дүйшөмбү",
+        "Шейшемби",
+        "Шаршемби",
+        "Бейшемби",
+        "Жума",
+        "Ишемби",
+        "Жекшемби"
+      ],
+      "en": [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday"
+      ]
+    },
+    "timeFormat": "HH:MM-HH:MM",
+    "paraFormat": "\\d+"
+  },
+  "parsing": {
+    "skipEmptyRows": true,
+    "skipEmptyColumns": true,
+    "mergedCellsStrategy": "fill_down",
+    "subgroupSeparator": "/",
+    "subgroupInGroupCode": true,
+    "subgroupPattern": "\\((\\d+)\\)"
+  },
+  "transforms": [
+    {
+      "type": "normalize_kyrgyz_teacher",
+      "params": {
+        "patterns": [
+          "кызы",
+          "уулу",
+          "теги",
+          "кызы",
+          "уулу"
+        ]
+      }
+    },
+    {
+      "type": "normalize_room",
+      "params": {
+        "patterns": {
+          "корпус": "корп.",
+          "кабинет": "каб.",
+          "аянтча": "аянтча"
+        }
+      }
+    },
+    {
+      "type": "detect_exam",
+      "params": {
+        "keywords": [
+          "экзамен",
+          "экз",
+          "зачёт",
+          "зачет",
+          "зач",
+          "тест",
+          "контрольн",
+          "кр",
+          "коллоквиум",
+          "диф.зачёт",
+          "диф.зачет"
+        ]
+      }
+    }
+  ]
+}
