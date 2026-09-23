@@ -11,11 +11,9 @@ const BUILD_TIMESTAMP = Date.now();
 
 export default defineConfig(({ mode }) => {
   const isProd = mode === "production";
-  const repoName = process.env.GITHUB_REPOSITORY || "telikuy070-collab/pendrops";
-  const [, repoOnly] = repoName.split("/");
 
   return {
-    base: isProd ? `/${repoOnly}/` : "/",
+    base: isProd ? "/pendrops/" : "/",
     root: ".",
     publicDir: "public",
     server: {
@@ -26,13 +24,14 @@ export default defineConfig(({ mode }) => {
       outDir: "dist",
       assetsDir: "assets",
       sourcemap: !isProd,
-      // Copy 404.html for SPA fallback on GitHub Pages
       rollupOptions: {
+        input: {
+          main: resolve(__dirname, "index.html"),
+        },
         output: {
           manualChunks: undefined,
         },
       },
-      // Generate build info for version tracking
       manifest: true,
     },
     define: {

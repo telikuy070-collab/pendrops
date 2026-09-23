@@ -202,8 +202,8 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
   private async doSetupRealtime(): Promise<void> {
     if (this.isDestroyed) return;
 
-    // Ensure realtime is enabled
-    this.client.realtime.setAuth(this.client.auth.getSession?.() ? '' : undefined); 
+    // Anon-only app: no token to sync, but ensure realtime connection is ready
+    this.client.realtime.getChannels();
 
     const attemptSubscription = async (): Promise<void> => {
       return new Promise((resolve, reject) => {
