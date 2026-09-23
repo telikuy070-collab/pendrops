@@ -46,13 +46,13 @@ function asset(path) {
 const PRECACHE_ASSETS = [
   BASE,                           // '/' (scope root)
   asset('index.html'),
-  asset('share-handler.html'),
   asset('manifest.json'),
   asset('xlsx.full.min.js'),
-  asset('styles.css'),
   asset('icons/icon.svg'),
   asset('icons/icon-192.png'),
   asset('icons/icon-512.png'),
+  // styles.css and share-handler.html are processed by Vite and hashed in dist/,
+  // so they're not in PRECACHE_ASSETS — they'll be cached on first fetch via runtime caching.
   asset('data/version.json'),
   asset('data/schedule.xls'),
 ];
@@ -181,10 +181,10 @@ async function handleShare(req) {
       const cache = await caches.open(SHARED_CACHE);
       await cache.put('/__shared__', response);
     }
-    return Response.redirect(new URL(asset('share-handler.html'), req.url).href, 303);
+    return Response.redirect(asset('share-handler.html'), 303);
   } catch (err) {
     console.error('[SW] share error:', err);
-    return Response.redirect(new URL(asset('index.html'), req.url).href, 303);
+    return Response.redirect(asset('index.html'), 303);
   }
 }
 
