@@ -61,13 +61,13 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
 
       if (error) throw toAppError(error);
 
-      // Load version
+      // Load version (maybeSingle — gracefully handle missing row)
       const { data: versionData } = await this.client
         .from('schedule_version')
         .select('version, updated_at')
-        .single();
+        .maybeSingle();
 
-      return this.transformRows(lessons || [], versionData);
+      return this.transformRows(lessons || [], versionData || null);
     }, { retries: 3, baseDelay: 1000, retryable: (e) => e.message.includes('network') || e.message.includes('timeout') });
   }
 
@@ -202,15 +202,19 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
   private async doSetupRealtime(): Promise<void> {
     if (this.isDestroyed) return;
 
-    // Use retry utility for initial subscription attempt
+    // Ensure realtime is enabled
+    this.client.realtime.setAuth(this.client.auth.getSession?.() ? '' : undefined); 
+
     const attemptSubscription = async (): Promise<void> => {
       return new Promise((resolve, reject) => {
-        this.realtimeChannel = this.client
-          .channel('schedule_changes')
+        const channel = this.client
+          .channel('pendrops:realtime:v1')
+          // Realtime on lessons — full reload since filters depend on group/sheet
           .on('postgres_changes', { event: '*', schema: 'public', table: 'lessons' }, (payload) => {
             if ((payload as any).eventType === 'SYSTEM') return;
             this.handleRealtimeChange();
           })
+          // Realtime on schedule_version — single source of truth trigger
           .on(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'schedule_version' },
@@ -229,10 +233,13 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
               reject(new Error(`Realtime subscription failed: ${status}`));
             }
           });
+
+        // Store channel reference so we can remove it
+        this.realtimeChannel = channel;
       });
     };
 
-    await withRetry(attemptSubscription, { retries: 3, baseDelay: 1000, retryable: (e) => e.message.includes('network') || e.message.includes('timeout') || e.message.includes('Realtime subscription failed') });
+    await withRetry(attemptSubscription, { retries: 5, baseDelay: 2000, retryable: (e) => e.message.includes('Realtime subscription failed') });
   }
 
   private scheduleReconnect(): void {
@@ -302,9 +309,13 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
       const { data, error } = await this.client
         .from('schedule_version')
         .select('version, updated_at')
-        .single();
+        .maybeSingle();
 
-      if (error) throw toAppError(error);
+      if (error && error.code !== 'PGRST116') throw toAppError(error);
+      if (!data) {
+        // Fallback: return a synthetic version so the app doesn't crash
+        return { version: 'local', updatedAt: new Date().toISOString() };
+      }
       return { version: data.version, updatedAt: data.updated_at };
     }, { retries: 3, baseDelay: 1000, retryable: (e) => e.message.includes('network') || e.message.includes('timeout') });
   }
@@ -316,9 +327,9 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
         .from('schedule_version')
         .select('updated_at')
         .eq('version', version)
-        .single();
+        .maybeSingle();
 
-      if (versionError) throw versionError;
+      if (versionError && versionError.code !== 'PGRST116') throw versionError;
 
       const cursor = versionData?.updated_at || new Date(0).toISOString();
 
@@ -335,7 +346,7 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
       const { data: currentVersionData } = await this.client
         .from('schedule_version')
         .select('version')
-        .single();
+        .maybeSingle();
 
       // Transform rows to Lesson entities
       const transformedLessons: Lesson[] = (lessons || []).map((row: LessonRow) => ({

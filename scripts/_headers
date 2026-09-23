@@ -1,0 +1,13 @@
+# GitHub Pages: _headers file (place in /docs/_headers or root)
+# https://docs.github.com/en/pages/setting-up-a-github-pages-site-for-your-repository/about-github-pages
+# Note: _headers only works with Jekyll disabled or in /docs folder
+
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://bnzcfhtmzvxxiwfkdryn.supabase.co wss://bnzcfhtmzvxxiwfkdryn.supabase.co; font-src 'self'; frame-ancestors 'none';
+
+# Vercel: _headers works in /public/_headers
+# Netlify: _headers works in /netlify/_headers or /public/_headers

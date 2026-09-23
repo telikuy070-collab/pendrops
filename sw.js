@@ -1,32 +1,36 @@
+// Public base path (subdirectory-aware, e.g. /pendrops/ for GitHub Pages)
+const BASE_PATH = new URL(self.location).pathname.replace(/[^/]+$/, ''); // ends with '/'
+const withBase = (p) => BASE_PATH + p.replace(/^\.?\//, '');
+
 const CACHE = 'schedule-pwa-v17';
 const RUNTIME_CACHE = 'schedule-runtime-v17';
 const SHARED_CACHE = 'shared-files';
 const REMOTE_SCHEDULE_CACHE = 'remote-schedule-v1';
-const LAST_VERSION_KEY = './data/version.json';
+const LAST_VERSION_KEY = withBase('./data/version.json');
 
 const ASSETS = [
-  './',
-  './index.html',
-  './share-handler.html',
-  './styles.css',
-  './manifest.json',
-  './xlsx.full.min.js',
-  './src/app.js',
-  './src/sheet.js',
-  './src/cell.js',
-  './src/day.js',
-  './src/timing.js',
-  './src/text.js',
-  './src/store.js',
-  './src/admin.js',
-  './src/constants.js',
-  './src/view/scheduleView.js',
-  './src/view/toast.js',
-  './src/view/dom.js',
-  './src/view/adminView.js',
-  './assets/icons/icon.svg',
-  './assets/icons/icon-192.png',
-  './assets/icons/icon-512.png',
+  withBase(''),
+  withBase('index.html'),
+  withBase('share-handler.html'),
+  withBase('styles.css'),
+  withBase('manifest.json'),
+  withBase('xlsx.full.min.js'),
+  withBase('src/app.js'),
+  withBase('src/sheet.js'),
+  withBase('src/cell.js'),
+  withBase('src/day.js'),
+  withBase('src/timing.js'),
+  withBase('src/text.js'),
+  withBase('src/store.js'),
+  withBase('src/admin.js'),
+  withBase('src/constants.js'),
+  withBase('src/view/scheduleView.js'),
+  withBase('src/view/toast.js'),
+  withBase('src/view/dom.js'),
+  withBase('src/view/adminView.js'),
+  withBase('assets/icons/icon.svg'),
+  withBase('assets/icons/icon-192.png'),
+  withBase('assets/icons/icon-512.png'),
 ];
 
 self.addEventListener('install', (e) => {
@@ -83,7 +87,7 @@ self.addEventListener('fetch', (e) => {
   }
 
   if (req.mode === 'navigate') {
-    e.respondWith(fetch(req).catch(() => caches.match('./index.html')));
+    e.respondWith(fetch(req).catch(() => caches.match(withBase('index.html'))));
     return;
   }
 
@@ -139,10 +143,10 @@ async function handleShare(req) {
       const cache = await caches.open(SHARED_CACHE);
       await cache.put('/__shared__', response);
     }
-    return Response.redirect(new URL('./share-handler.html', req.url).href, 303);
+    return Response.redirect(new URL('./share-handler.html', self.location).href, 303);
   } catch (err) {
     console.error('[SW] share error:', err);
-    return Response.redirect(new URL('./index.html', req.url).href, 303);
+    return Response.redirect(new URL('./index.html', self.location).href, 303);
   }
 }
 
@@ -177,14 +181,18 @@ self.addEventListener('message', (e) => {
  */
 async function checkScheduleUpdate() {
   try {
-    const verRes = await fetch(LAST_VERSION_KEY + '?t=' + Date.now(), { cache: 'no-store' });
+    const base = self.location;
+    const verUrl = new URL(LAST_VERSION_KEY, base).href;
+    const xlsUrl = new URL('./data/schedule.xls', base).href;
+    const verRes = await fetch(verUrl + '?t=' + Date.now(), { cache: 'no-store' });
     if (!verRes.ok) return;
+
     const verJson = await verRes.json();
     const newStamp = verJson && verJson.updated;
     if (!newStamp) return;
 
     const cache = await caches.open(REMOTE_SCHEDULE_CACHE);
-    const lastKnown = (await cache.match(LAST_VERSION_KEY)) || null;
+    const lastKnown = (await cache.match(verUrl)) || null;
     let lastStamp = null;
     if (lastKnown) {
       try {
@@ -198,20 +206,20 @@ async function checkScheduleUpdate() {
     if (lastStamp === newStamp) return; // ничего не изменилось
 
     // Качаем новый schedule.xls
-    const xlsRes = await fetch('./data/schedule.xls?t=' + Date.now(), { cache: 'no-store' });
+    const xlsRes = await fetch(xlsUrl + '?t=' + Date.now(), { cache: 'no-store' });
     if (!xlsRes.ok) return;
     const xlsBuf = await xlsRes.arrayBuffer();
 
-    // Кладём в cache
+    // Кладём в cache по полным URL
     await cache.put(
-      LAST_VERSION_KEY,
+      verUrl,
       new Response(JSON.stringify(verJson), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })
     );
     await cache.put(
-      './data/schedule.xls',
+      xlsUrl,
       new Response(xlsBuf.slice(0), {
         status: 200,
         headers: { 'Content-Type': 'application/vnd.ms-excel' },
