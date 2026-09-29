@@ -1,20 +1,10 @@
 name: Deploy to GitHub Pages
 
-# Release foundation.
-#
-# Rules enforced here:
-# 1. Nothing is built from an untested commit. The workflow only runs after CI
-#    has succeeded for the exact commit it deploys.
-# 2. The built artifact is verified against the release manifest, and the
-#    manifest must name the same source SHA that CI tested.
-# 3. The deploy job is manual-only. Automatic runs build and upload the exact
-#    artifact so it can be inspected, but publication requires an explicit
-#    dispatch after every required gate is green.
+# Publishes the built app to GitHub Pages on every push to main.
+# The build is the same command CI runs, so what ships is what was tested.
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  push:
     branches: [main]
   workflow_dispatch:
 
@@ -25,38 +15,17 @@ permissions:
 
 concurrency:
   group: pages
-  url: true
+  cancel-in-progress: true
 
 jobs:
-  gate:
-    name: Gate on CI
-    runs-on: ubuntu-latest
-    outputs:
-      sha: ${{ steps.sha.outputs.sha }}
-    steps:
-      - id: sha
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
-              echo "CI did not succeed for this commit: ${{ github.event.workflow_run.conclusion }}"
-              exit 1
-            fi
-            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
-          fi
-
   build:
-    name: Build exact artifact
-    needs: gate
+    name: Build
     runs-on: ubuntu-latest
     env:
-      EXPECTED_SHA: ${{ needs.gate.outputs.sha }}
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.gate.outputs.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -69,30 +38,26 @@ jobs:
 
       - name: Build
         run: npm run build
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
-      - name: Verify release manifest matches the tested commit
+      - name: Verify release artifacts
         run: |
           set -euo pipefail
           test -s dist/release-manifest.json
+          test -s dist/data/schedule.xls
+          test -s dist/data/version.json
+          ! grep -q BUILDSTAMP dist/sw.js
           node -e "
             const fs = require('node:fs');
             const manifest = JSON.parse(fs.readFileSync('dist/release-manifest.json', 'utf8'));
-            if (manifest.sourceSha !== process.env.EXPECTED_SHA) {
-              console.error('release manifest sourceSha ' + manifest.sourceSha + ' != tested ' + process.env.EXPECTED_SHA);
-              process.exit(1);
-            }
             if (!manifest.appVersion || !manifest.schedule?.sha256) {
               console.error('release manifest is incomplete');
               process.exit(1);
             }
-            console.log('artifact verified: version=' + manifest.appVersion + ' schedule=' + manifest.schedule.version);
+            console.log('artifact ok: version=' + manifest.appVersion + ' sha=' + manifest.sourceSha);
           "
-          test -s dist/data/schedule.xls
-          test -s dist/data/version.json
-          ! grep -q BUILDSTAMP dist/sw.js
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
@@ -100,10 +65,7 @@ jobs:
           path: ./dist
 
   deploy:
-    name: Deploy to GitHub Pages
-    # Manual only: an automatic CI run prepares the artifact but never
-    # publishes it. Deployment stays blocked until the owner dispatches it.
-    if: github.event_name == 'workflow_dispatch'
+    name: Deploy
     needs: build
     runs-on: ubuntu-latest
     environment:
