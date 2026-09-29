@@ -13,6 +13,8 @@
     "preview:teacher": "vite preview --config vite.teacher.config.js",
     "test": "vitest run",
     "test:parser": "vitest run tests/parser --config vitest.config.ts",
+    "test:parser:invariants": "vitest run tests/parser/no-loss.test.js",
+    "report:parser": "vite-node --config vitest.config.ts scripts/parser-report.ts",
     "test:parser:coverage": "vitest run --coverage --config vitest.config.ts",
     "test:parser:fixtures": "vite-node --config vitest.config.ts scripts/parser-quality.ts --gate",
     "test:parser:fixtures:report": "vite-node --config vitest.config.ts scripts/parser-quality.ts --report-only",
