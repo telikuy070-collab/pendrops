@@ -52,7 +52,15 @@ export const TYPE_LABELS = Object.freeze({
 
 export const STORAGE_KEY = 'schedule:v1';
 export const CACHE_NAME = 'schedule-pwa-v4';
-export const APP_VERSION = '1.1.0';
+/**
+ * Single source of truth is package.json; the build injects the value through
+ * the `__APP_VERSION__` define (see vite.config.js). The literal fallback is
+ * only used by tooling that does not run the Vite define (for example a bare
+ * `node` import) and is intentionally not a real release version.
+ */
+export const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.0.0-dev';
+export const BUILD_TIMESTAMP = typeof __BUILD_TIMESTAMP__ === 'number' ? __BUILD_TIMESTAMP__ : 0;
+export const BUILD_DATE = typeof __BUILD_DATE__ === 'string' ? __BUILD_DATE__ : '';
 
 export const MAX_HEADER_SCAN_ROWS = 30;
 export const MAX_DAY_LOOKAHEAD = 80;

@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 dist-teacher/
+coverage/
 *.local
 
 # Logs
@@ -12,14 +13,16 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Excel files (uploaded via admin, not committed)
+# Excel files: only the canonical tracked snapshot is committed, so the
+# production build can always package an offline schedule.
 *.xls
 *.xlsx
+!data/schedule.xls
 
-# Data files (generated, not committed)
+# Data files: admin.json is runtime state, version.json is the canonical
+# snapshot metadata and IS tracked.
 data/admin.json
-data/schedule.xls
-data/version.json
+!data/version.json
 
 # Environment
 .env
@@ -36,6 +39,9 @@ Thumbs.db
 # Vite / build cache
 .vite/
 .eslintcache
+
+# Agent Manager local state and worktrees
+.kilo/
 
 # Teacher PWA (separate repo: pendrops-Teacher)
 teacher-app/

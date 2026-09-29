@@ -17,18 +17,51 @@ export async function loadScheduleUseCase(
   storage: IStorage
 ): Promise<ScheduleData> {
   // 1. Try cached data first (instant UI)
-  const cached = await storage.get<ScheduleData>('schedule_cache');
-  if (cached && cached.sheets && cached.sheets.size > 0) {
+  const cached = await loadCachedScheduleUseCase(storage);
+  if (cached) {
     return cached;
   }
 
   // 2. Load from repository (DB)
-  const data = await repository.loadFull();
-
-  // 3. Cache for next instant load
-  await storage.set('schedule_cache', data);
-
+  const { data } = await refreshScheduleUseCase(repository, storage);
   return data;
+}
+
+/**
+ * Cached schedule for an instant, non-blocking first render.
+ * Returns null when there is no usable cache — the caller then shows a loading
+ * state instead of pretending the cache is authoritative.
+ */
+export async function loadCachedScheduleUseCase(storage: IStorage): Promise<ScheduleData | null> {
+  const cached = await storage.get<ScheduleData>('schedule_cache');
+  if (cached && cached.sheets && cached.sheets.size > 0) {
+    return cached;
+  }
+  return null;
+}
+
+/** Result of an authoritative reload. */
+export interface FreshSchedule {
+  data: ScheduleData;
+  /** False when the offline copy could not be refreshed (retryable warning). */
+  cacheUpdated: boolean;
+}
+
+/**
+ * Authoritative reload: fetch from the repository, then best-effort refresh the
+ * offline cache.
+ *
+ * The apply/cache order is deliberate: the caller applies `data` immediately
+ * and never blocks on the cache write, and a failed write never deletes or
+ * invalidates the previously cached schedule.
+ */
+export async function refreshScheduleUseCase(
+  repository: IScheduleRepository,
+  storage: IStorage
+): Promise<FreshSchedule> {
+  const data = await repository.loadFull();
+  const cacheUpdated = await storage.set('schedule_cache', data);
+  return { data, cacheUpdated };
 }
 
 /** Subscribe to realtime updates */

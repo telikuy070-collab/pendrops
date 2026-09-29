@@ -10,9 +10,17 @@ import { SupabaseScheduleRepository } from '@infrastructure/supabase/repository'
 import { SupabaseAuthProvider } from '@infrastructure/supabase/auth';
 import { HybridStorage } from '@infrastructure/storage/hybrid';
 import { ExcelFileParser } from '@infrastructure/github/parser';
-import { actions, filteredLessons, schedule, preferences, ui, todayName } from '@presentation/stores/appStore';
+import {
+  actions,
+  filteredLessons,
+  schedule,
+  preferences,
+  ui,
+  todayName,
+} from '@presentation/stores/appStore';
 import { createToast } from './view/toast.js';
 import { createScheduleView } from './view/scheduleView.js';
+import { createScheduleStatusBanner } from './view/scheduleStatus.js';
 import { createAdminView } from './view/adminView.js';
 import { initBrandGesture } from '@presentation/gestures/brandGesture';
 import { escapeHtml } from './text.js';
@@ -21,6 +29,7 @@ import type { PreferencesService as PrefsServiceType } from '@core/application/s
 import { reportError } from './view/errorBoundary.js';
 import { toAppError } from '@core/domain/errors';
 import { logger } from '@shared/logger';
+import { getBuildDiagnostics, formatBuildDiagnostics } from '@shared/diagnostics';
 import { getSupabaseClient } from '@infrastructure/supabase/client.js';
 import type { ScheduleData } from '@core/domain/entities/types';
 // Force Supabase bundle inclusion
@@ -28,6 +37,9 @@ import '@supabase/supabase-js';
 
 // Toast instance - declared at module level so it's accessible before bootstrap completes
 let toast: ReturnType<typeof createToast>;
+
+/** Where the currently rendered schedule came from. */
+type ScheduleSource = 'cache' | 'fresh' | 'realtime';
 
 /** Initialize all services and start the app */
 export async function bootstrap(): Promise<void> {
@@ -47,10 +59,74 @@ export async function bootstrap(): Promise<void> {
   const adminService = new AdminService(repository, parser);
 
   // Initialize UI FIRST (so toast exists before any async callbacks)
-  initializeUI(scheduleService, prefsService, authService, adminService);
+  const banner = initializeUI(scheduleService, prefsService, authService, adminService);
 
   // Load initial data
   actions.setLoading(true);
+
+  // Version bookkeeping: exactly one "Расписание обновлено" toast per applied
+  // version, no matter whether the version arrived through realtime, a manual
+  // refresh or a Service Worker message.
+  let lastAnnouncedVersion = '';
+  let cacheWarningShown = false;
+
+  /** Applies a schedule and announces a new version at most once. */
+  const applySchedule = (data: ScheduleData, source: ScheduleSource): void => {
+    actions.setSchedule(data);
+    renderBuildInfo(data);
+
+    const version = data.version || '';
+    if (source !== 'cache' && version && version !== lastAnnouncedVersion) {
+      lastAnnouncedVersion = version;
+      toast?.show('Расписание обновлено', 'ok');
+    }
+  };
+
+  /** Retryable warning: the offline copy is stale, the applied data is fine. */
+  const warnCacheWrite = (): void => {
+    if (cacheWarningShown) return;
+    cacheWarningShown = true;
+    banner.show('warn', 'Не удалось обновить офлайн-копию расписания.', {
+      onRetry: () => {
+        cacheWarningShown = false;
+        void reloadAuthoritative('cache-retry');
+      },
+      retryLabel: 'Повторить',
+    });
+  };
+
+  /**
+   * Authoritative load: apply immediately, then refresh the offline cache.
+   * A failed load keeps whatever is already on screen and shows a retry.
+   */
+  async function reloadAuthoritative(reason: string): Promise<void> {
+    actions.setLoading(true);
+    try {
+      const { data, cacheUpdated } = await scheduleService.refresh(reason);
+      applySchedule(data, reason === 'realtime' ? 'realtime' : 'fresh');
+      if (cacheUpdated) {
+        cacheWarningShown = false;
+        banner.hide();
+      } else {
+        warnCacheWrite();
+      }
+    } catch (err) {
+      const appError = toAppError(err);
+      logger.error('[App] Schedule load failed', { reason }, appError);
+      if (schedule.value) {
+        // Cached data stays on screen; the user can retry.
+        banner.show('error', appError.userMessage, {
+          onRetry: () => void reloadAuthoritative(reason),
+          retryLabel: 'Повторить',
+        });
+      } else {
+        actions.setError('Не удалось загрузить расписание');
+        reportError(appError, 'Не удалось загрузить расписание');
+      }
+    } finally {
+      actions.setLoading(false);
+    }
+  }
 
   try {
     // Load preferences first
@@ -59,19 +135,28 @@ export async function bootstrap(): Promise<void> {
     actions.setPreference('currentGroup', prefs.currentGroup);
     actions.setPreference('activeSubgroup', prefs.activeSubgroup);
 
-    // Load schedule (instant from cache, then fresh from DB)
-    const scheduleData = await scheduleService.load();
-    actions.setSchedule(scheduleData);
+    // Non-blocking first render: the cached snapshot paints immediately while
+    // the authoritative load runs. The heavy XLS parser is not part of this path.
+    const cached = await scheduleService.loadCached();
+    if (cached) {
+      applySchedule(cached, 'cache');
+      lastAnnouncedVersion = cached.version || '';
+    }
+
+    await reloadAuthoritative('bootstrap');
 
     // Subscribe to realtime updates
-    let initialLoad = true;
     const unsubscribe = scheduleService.subscribe((data) => {
-      actions.setSchedule(data);
-      // Show toast for updates (but not initial load)
-      if (!initialLoad) {
-        toast?.show('Расписание обновлено', 'ok');
-      }
-      initialLoad = false;
+      // Authoritative-first: apply, then refresh the offline cache.
+      applySchedule(data, 'realtime');
+      void storage.set('schedule_cache', data).then((cacheUpdated) => {
+        if (cacheUpdated) {
+          cacheWarningShown = false;
+          banner.hide();
+        } else {
+          warnCacheWrite();
+        }
+      });
     });
 
     // Store unsubscribe for cleanup
@@ -79,6 +164,8 @@ export async function bootstrap(): Promise<void> {
 
     // Check for updates periodically
     startUpdateChecker(scheduleService);
+    listenForServiceWorkerUpdates(() => reloadAuthoritative('service-worker'));
+    logger.debug('[App] Build', { ...getBuildDiagnostics() });
   } catch (err) {
     logger.error('[App] Bootstrap failed', { context: 'bootstrap' }, err as Error);
     actions.setError('Не удалось загрузить расписание');
@@ -87,12 +174,22 @@ export async function bootstrap(): Promise<void> {
     actions.setLoading(false);
   }
 
+  /** Build identity in the settings modal, so bug reports name a real build. */
+  function renderBuildInfo(data: ScheduleData): void {
+    const info = document.getElementById('scheduleInfo');
+    const text = document.getElementById('scheduleInfoText');
+    if (!info || !text) return;
+    const version = data.version ? ` · расписание ${data.version}` : '';
+    text.textContent = `${formatBuildDiagnostics()}${version}`;
+    info.hidden = false;
+  }
+
   function initializeUI(
     scheduleService: ScheduleService,
     prefsService: PrefsServiceType,
     authService: AuthService,
     adminService: AdminService
-  ): void {
+  ): ReturnType<typeof createScheduleStatusBanner> {
     // Get DOM elements
     const container = document.getElementById('scheduleContainer');
     const toastEl = document.getElementById('toast');
@@ -100,8 +197,9 @@ export async function bootstrap(): Promise<void> {
     toast = createToast(toastEl);
     (window as any).toast = toast;
 
-    // Initialize schedule view
+    // Initialize schedule view and start its live timer
     const scheduleView = createScheduleView(container);
+    scheduleView.start();
 
     // Create admin view for brand gesture
     const adminView = createAdminView(authService, adminService, toast);
@@ -111,6 +209,11 @@ export async function bootstrap(): Promise<void> {
     const groupValue = document.getElementById('groupValue');
     const subgroupValue = document.getElementById('subgroupValue');
     const quickPick = document.getElementById('quickPick');
+
+    // The schedule view owns pull-to-refresh; main.ts must not attach a second
+    // handler, otherwise one gesture triggers two refreshes.
+    scheduleView.setOnRefresh(() => handlePullRefresh(scheduleService));
+    scheduleView.setOnDayChange((day: string) => syncDayFilter(day));
 
     // Bind store to view
     effect(() => {
@@ -126,7 +229,8 @@ export async function bootstrap(): Promise<void> {
         scheduleView.render(filteredLessons.value, {
           today: state.ui.loading ? '' : todayName.value,
         });
-        // Show quickPick selectors when schedule is loaded
+        // Show quickPick selectors when schedule is loaded. The compact pill
+        // stays visible for the rest of the session.
         if (quickPick) quickPick.classList.remove('hidden');
       }
       // Update pill values
@@ -150,6 +254,13 @@ export async function bootstrap(): Promise<void> {
 
     // Bind UI events
     bindEvents(scheduleService, prefsService, authService, adminService);
+
+    return createScheduleStatusBanner();
+  }
+
+  function syncDayFilter(day: string): void {
+    const dayFilter = document.getElementById('dayFilter') as HTMLSelectElement | null;
+    if (dayFilter) dayFilter.value = day;
   }
 
   function bindEvents(
@@ -234,33 +345,8 @@ export async function bootstrap(): Promise<void> {
       actions.resetFilters();
     });
 
-    // Pull to refresh
-    const scheduleContainer = document.getElementById('scheduleContainer') as HTMLElement | null;
-    let pullStart = 0;
-    scheduleContainer?.addEventListener(
-      'touchstart',
-      (e: TouchEvent) => {
-        if ((e.target as HTMLElement).closest('.card')) return;
-        const touch = e.touches[0];
-        if (touch) pullStart = touch.clientY;
-      },
-      { passive: true }
-    );
-
-    scheduleContainer?.addEventListener(
-      'touchmove',
-      (e: TouchEvent) => {
-        if (pullStart === 0 || !scheduleContainer) return;
-        const touch = e.touches[0];
-        if (!touch) return;
-        const delta = touch.clientY - pullStart;
-        if (delta > 100 && scheduleContainer.scrollTop === 0) {
-          handlePullRefresh(scheduleService);
-          pullStart = 0;
-        }
-      },
-      { passive: true }
-    );
+    // Pull-to-refresh is implemented once, inside scheduleView (setOnRefresh
+    // above). No second touch handler is attached here.
   }
 
   function renderSheetPicker(scheduleData: ScheduleData): void {
@@ -371,40 +457,65 @@ export async function bootstrap(): Promise<void> {
     const { hasUpdate } = await scheduleService.checkUpdates(currentVersion);
 
     if (hasUpdate) {
-      const scheduleData = await scheduleService.load();
-      actions.setSchedule(scheduleData);
-      toast?.show('Расписание обновлено', 'ok');
+      // Same authoritative path as bootstrap/realtime: one apply, one toast,
+      // one offline-cache refresh.
+      await reloadAuthoritative('pull-refresh');
     } else {
       toast?.show('Обновлений нет', 'ok');
     }
   }
 
   function startUpdateChecker(scheduleService: ScheduleService): void {
-    // Check on visibility change
-    document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState === 'visible') {
+    const check = async (reason: string): Promise<void> => {
+      try {
         const currentVersion = schedule.value?.version || '';
         const { hasUpdate, version, updatedAt } =
           await scheduleService.checkUpdates(currentVersion);
         if (hasUpdate) {
           actions.setUpdateAvailable({ version, updatedAt });
+          await reloadAuthoritative(reason);
         }
+      } catch (err) {
+        logger.warn('[App] Update check failed', { reason, error: toAppError(err).code });
+      }
+    };
+
+    // Check on visibility change
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        void check('visibility');
+        requestServiceWorkerCheck();
       }
     });
 
     // Periodic check every 5 minutes
-    setInterval(
-      async () => {
-        const currentVersion = schedule.value?.version || '';
-        const { hasUpdate, version, updatedAt } =
-          await scheduleService.checkUpdates(currentVersion);
-        if (hasUpdate) {
-          actions.setUpdateAvailable({ version, updatedAt });
-        }
-      },
-      5 * 60 * 1000
-    );
+    setInterval(() => void check('interval'), 5 * 60 * 1000);
   }
+}
+
+/**
+ * Asks the Service Worker to refresh its cached schedule snapshot.
+ * The worker answers with the same version semantics; the applied data still
+ * comes from the authoritative repository, so no stale cache is ever rendered.
+ */
+function requestServiceWorkerCheck(): void {
+  if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return;
+  navigator.serviceWorker.controller.postMessage({ type: 'check-schedule' });
+}
+
+/**
+ * Service Worker → client update notifications.
+ * A single handler serves every origin of an update (worker cache refresh,
+ * manual check), so exactly one toast is shown per applied version.
+ */
+function listenForServiceWorkerUpdates(onUpdate: (version: string) => void): void {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.addEventListener('message', (event: MessageEvent) => {
+    const data = event.data as { type?: string; version?: string } | null;
+    if (!data || data.type !== 'schedule-updated') return;
+    logger.debug('[SW] schedule-updated received', { version: data.version ?? '' });
+    onUpdate(data.version ?? '');
+  });
 }
 
 /**

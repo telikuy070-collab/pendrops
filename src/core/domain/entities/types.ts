@@ -63,30 +63,6 @@ export interface ScheduleData {
   updatedAt: string;
 }
 
-/** Repository port - infrastructure implements this */
-export interface IScheduleRepository {
-  /** Load full schedule for offline-first UX */
-  loadFull(): Promise<ScheduleData>;
-
-  /** Subscribe to realtime changes */
-  subscribe(callback: (data: ScheduleData) => void): () => void;
-
-  /** Get current version for update checks */
-  getVersion(): Promise<{ version: string; updatedAt: string }>;
-
-  /** Admin: publish new schedule (replace all) */
-  publish(schedule: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[]): Promise<void>;
-}
-
-/** Auth port */
-export interface IAuthProvider {
-  verifyPin(pin: string): Promise<boolean>;
-  isAdmin(): boolean;
-}
-
-/** Storage port */
-export interface IStorage {
-  get<T>(key: string): Promise<T | null>;
-  set<T>(key: string, value: T): Promise<void>;
-  remove(key: string): Promise<void>;
-}
+// Repository and auth ports live in @core/domain/repositories/ports.
+// They are deliberately not duplicated here: this module is the pure entity
+// vocabulary that the presentation and application layers consume.

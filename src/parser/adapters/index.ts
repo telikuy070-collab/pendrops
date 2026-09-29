@@ -3,7 +3,7 @@
  * Позволяет расширять функциональность парсера через систему адаптеров
  */
 
-import type { FormatConfig } from '../types.js';
+import type { FormatConfig } from '../types.ts';
 
 /**
  * Контекст выполнения парсера, передаваемый адаптерам
@@ -78,4 +78,4 @@ export interface AdapterResult<T = any> {
   adapterName: string;
 }
 
-export type { FormatConfig } from '../types.js';
+export type { FormatConfig } from '../types.ts';

@@ -11,6 +11,7 @@ import type {
   DayName,
 } from '@core/domain/entities/types';
 import { signal, computed, effect, batch } from '@preact/signals';
+import { logger } from '@shared/logger';
 
 export interface AppState {
   schedule: ScheduleData | null;
@@ -157,14 +158,14 @@ export const filteredLessons = computed(() => {
     );
   }
 
-  // Debug logging
-  console.log('[filter]', {
+  // Counts only: lesson objects are never logged (they contain the full
+  // schedule and would flood the console on every filter change).
+  logger.debug('[filter] applied', {
     sheet: prefs.currentSheetId,
     group: prefs.currentGroup,
     subgroup: prefs.activeSubgroup,
     total: allLessons.length,
     filtered: result.length,
-    first: result[0],
   });
 
   return result;
@@ -213,10 +214,7 @@ export const actions = {
     });
   },
 
-  setFilter<K extends keyof typeof initialFilters>(
-    key: K,
-    value: typeof initialFilters[K]
-  ) {
+  setFilter<K extends keyof typeof initialFilters>(key: K, value: (typeof initialFilters)[K]) {
     batch(() => {
       currentFilters.value = { ...currentFilters.value, [key]: value };
     });

@@ -12,11 +12,17 @@
     "preview": "vite preview",
     "preview:teacher": "vite preview --config vite.teacher.config.js",
     "test": "vitest run",
+    "test:parser": "vitest run tests/parser --config vitest.config.ts",
+    "test:parser:coverage": "vitest run --coverage --config vitest.config.ts",
+    "test:parser:fixtures": "vite-node --config vitest.config.ts scripts/parser-quality.ts --gate",
+    "test:parser:fixtures:report": "vite-node --config vitest.config.ts scripts/parser-quality.ts --report-only",
     "test:teacher": "vitest run teacher-app/tests",
     "test:watch": "vitest",
     "test:edge": "node tests/edge-cases.js",
     "test:store": "node tests/store-audit.js",
     "test:security": "node tests/security-audit.mjs",
+    "verify:data": "node scripts/verify-data.mjs",
+    "verify:oracle": "vite-node --config vitest.config.ts scripts/oracle-supabase.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:teacher": "tsc --noEmit -p tsconfig.teacher.json",
     "lint": "eslint . --fix && prettier --write .",
@@ -26,8 +32,17 @@
   "engines": {
     "node": ">=20"
   },
+  "lint-staged": {
+    "*.{ts,js,mjs,cjs}": [
+      "prettier --write"
+    ],
+    "*.{json,yml,css,html,md}": [
+      "prettier --write"
+    ]
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@vitest/coverage-v8": "2.1.9",
     "dotenv": "^17.4.2",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
@@ -39,6 +54,7 @@
     "typescript": "^5.9.0",
     "typescript-eslint": "^8.69.0",
     "vite": "^8.2.2",
+    "vite-node": "2.1.9",
     "vitest": "^2.1.0",
     "xlsx": "^0.18.5"
   },

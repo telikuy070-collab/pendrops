@@ -4,7 +4,7 @@
  */
 
 import { norm } from '../text.js';
-import { classifier, LESSON_TYPES, type ClassificationResult } from './classifier.js';
+import { classifier, LESSON_TYPES, type ClassificationResult } from './classifier.ts';
 import { TYPE_IDS } from '../constants.js';
 
 /**
@@ -23,6 +23,7 @@ export interface ExtractedAllFields {
   room: ExtractedField | null;
   teacher: ExtractedField | null;
   subject: ExtractedField;
+  isExam: boolean;
   confidence: number; // общий confidence (минимум из ненулевых полей)
 }
 
@@ -43,7 +44,8 @@ export interface FieldExtractorConfig {
 }
 
 // Базовые паттерны согласно требованиям
-const DEFAULT_ROOM_PATTERN = /(?:№\d+\s*корп(?:ус)?\.?,?\s*\d+|спорттук\s+аянтча|кл\.\s*каб\s*\d+|ауд\.?\s*\d+|ауд\s+\d+|Оптика)/i;
+const DEFAULT_ROOM_PATTERN =
+  /(?:№\d+\s*корп(?:ус)?\.?,?\s*\d+|спорттук\s+аянтча|кл\.\s*каб\s*\d+|ауд\.?\s*\d+|ауд\s+\d+|Оптика)/i;
 
 // Улучшенный паттерн для стандартного ФИО: поддерживает "И.И.", "И. И.", "И И" форматы (макс 2 инициала)
 // Используем negative lookbehind вместо \b, так как \b не работает с кириллицей
@@ -51,7 +53,8 @@ const DEFAULT_TEACHER_PATTERN = /(?<![А-ЯЁа-яё])[А-ЯЁ][а-яё]{2,}\s+[
 
 const DEFAULT_KURATOR_PATTERN = /куратордук|куратор/i;
 
-const DEFAULT_EXAM_PATTERN = /(?:^|[\s.,;:])(экзамен|экз\.?|зачёт|зачет|зач\.?|тест|диф\.\s*зачёт|диф\.\s*зачет|контрольн[а-я]*|к\.\s*р\.?|кр|коллоквиум)(?=$|[\s.,;:,.])/i;
+const DEFAULT_EXAM_PATTERN =
+  /(?:^|[\s.,;:])(экзамен|экз\.?|зачёт|зачет|зач\.?|тест|диф\.\s*зачёт|диф\.\s*зачет|контрольн[а-я]*|к\.\s*р\.?|кр|коллоквиум)(?=$|[\s.,;:,.])/i;
 
 /**
  * Маппинг типов классификатора на TYPE_IDS
@@ -137,12 +140,16 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
   /**
    * Извлекает преподавателя из текста
    * Форматы: "Иванов И.И.", "Иванов И. И.", "Иванов И И"
-   * Также поддерживает кыргызские форматы: 
+   * Также поддерживает кыргызские форматы:
    *   - "Улукбек кызы Э.", "Кадырбек уулу М." (Имя кызы/уулу И.)
    *   - "Айтиев Урбай кызы Н." (Фамилия Имя кызы/уулу И.)
    *   - "Фамилия Имя Отчество кызы/уулу И." (полный формат)
    */
-  function extractTeacher(text: string, customTeacherPattern?: RegExp, roomValue?: string): ExtractedField | null {
+  function extractTeacher(
+    text: string,
+    customTeacherPattern?: RegExp,
+    roomValue?: string
+  ): ExtractedField | null {
     const normalized = norm(text);
     if (!normalized) return null;
 
@@ -166,13 +173,20 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
     // Используем negative lookbehind вместо \b, так как \b не работает с кириллицей
     const standardPattern = /(?<![А-ЯЁа-яё])([А-ЯЁ][а-яё]{2,}\s+[А-ЯЁ]\.?(?:\s*[А-ЯЁ]\.?){0,1})/g;
     // Паттерн для кыргызских имен (короткий): Имя кызы/уулу И. (регистронезависимый для кызы/уулу)
-    const kyrgyzShortPattern = /([А-ЯЁ][а-яё]+\s+(?:[Кк][Ыы][Зз][Ыы]|[Уу][Уу][Лл][Уу])\s+[А-ЯЁ]\.?)/g;
+    const kyrgyzShortPattern =
+      /([А-ЯЁ][а-яё]+\s+(?:[Кк][Ыы][Зз][Ыы]|[Уу][Уу][Лл][Уу])\s+[А-ЯЁ]\.?)/g;
     // Паттерн для кыргызских имен (средний): Фамилия Имя кызы/уулу И.
-    const kyrgyzPattern = /([А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+(?:[Кк][Ыы][Зз][Ыы]|[Уу][Уу][Лл][Уу])\s+[А-ЯЁ]\.?)/g;
+    const kyrgyzPattern =
+      /([А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+(?:[Кк][Ыы][Зз][Ыы]|[Уу][Уу][Лл][Уу])\s+[А-ЯЁ]\.?)/g;
     // Паттерн для полного кыргызского ФИО: Фамилия Имя Отчество кызы/уулу И.
-    const kyrgyzFullPattern = /([А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+(?:[Кк][Ыы][Зз][Ыы]|[Уу][Уу][Лл][Уу])\s+[А-ЯЁ]\.?)/g;
+    const kyrgyzFullPattern =
+      /([А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+(?:[Кк][Ыы][Зз][Ыы]|[Уу][Уу][Лл][Уу])\s+[А-ЯЁ]\.?)/g;
 
-    const allMatches: Array<{match: string; index: number; patternType: 'standard' | 'kyrgyz-short' | 'kyrgyz' | 'kyrgyz-full'}> = [];
+    const allMatches: Array<{
+      match: string;
+      index: number;
+      patternType: 'standard' | 'kyrgyz-short' | 'kyrgyz' | 'kyrgyz-full';
+    }> = [];
 
     // Собираем все совпадения с их позициями (приоритет: полные -> средние -> короткие -> стандартные)
     for (const m of normalized.matchAll(kyrgyzFullPattern)) {
@@ -191,14 +205,19 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
     if (!allMatches.length) return null;
 
     // Фильтруем ложные срабатывания (например, "спорттук аянтча К")
-    const validMatches = allMatches.filter(m => {
+    const validMatches = allMatches.filter((m) => {
       const words = m.match.split(/\s+/);
       // Не должно быть слов типа "спорттук", "аянтча", "корп", "корпус", "№"
       const lowerMatch = m.match.toLowerCase();
-      if (lowerMatch.includes('спорттук') || lowerMatch.includes('аянтча') || 
-          lowerMatch.includes('корп') || lowerMatch.includes('корпус') ||
-          lowerMatch.includes('№') || lowerMatch.includes('ауд') ||
-          lowerMatch.includes('кл.')) {
+      if (
+        lowerMatch.includes('спорттук') ||
+        lowerMatch.includes('аянтча') ||
+        lowerMatch.includes('корп') ||
+        lowerMatch.includes('корпус') ||
+        lowerMatch.includes('№') ||
+        lowerMatch.includes('ауд') ||
+        lowerMatch.includes('кл.')
+      ) {
         return false;
       }
       // Исключаем совпадения, которые начинаются с названия аудитории (например, "Оптика Г. А")
@@ -234,8 +253,8 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
     // Для кыргызских имен предпочитаем более полные совпадения (с фамилией)
     // Сортируем: кыргызские по убыванию количества слов (более полные сначала),
     // затем стандартные по позиции (последние в тексте)
-    const kyrgyzMatches = validMatches.filter(m => /(?:кызы|уулу)/i.test(m.match));
-    const standardMatches = validMatches.filter(m => !/(?:кызы|уулу)/i.test(m.match));
+    const kyrgyzMatches = validMatches.filter((m) => /(?:кызы|уулу)/i.test(m.match));
+    const standardMatches = validMatches.filter((m) => !/(?:кызы|уулу)/i.test(m.match));
 
     let candidate: string;
     if (kyrgyzMatches.length > 0) {
@@ -265,8 +284,12 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
     let confidence = 0.85;
     if (/^[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.?(?:\s*[А-ЯЁ]\.?){0,1}$/.test(candidate)) confidence = 0.95;
     else if (/^[А-ЯЁ][а-яё]+\s+(?:кызы|уулу)\s+[А-ЯЁ]\.?$/i.test(candidate)) confidence = 0.9;
-    else if (/^[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+(?:кызы|уулу)\s+[А-ЯЁ]\.?$/i.test(candidate)) confidence = 0.9;
-    else if (/^[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+(?:кызы|уулу)\s+[А-ЯЁ]\.?$/i.test(candidate)) confidence = 0.95;
+    else if (/^[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+(?:кызы|уулу)\s+[А-ЯЁ]\.?$/i.test(candidate))
+      confidence = 0.9;
+    else if (
+      /^[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+(?:кызы|уулу)\s+[А-ЯЁ]\.?$/i.test(candidate)
+    )
+      confidence = 0.95;
 
     return { value: candidate, confidence };
   }
@@ -284,14 +307,24 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
     }
 
     // Проверка явных ключевых слов типа занятия
-    const hasExplicitTypeKeyword = /(?:^|[\s.,;:])(?:пр|практ|практика|семинар|сем|лаб|лабораторн|лек|лекц|лекция)(?=$|[\s.,;:])/i.test(normalized);
-    
+    const hasExplicitTypeKeyword =
+      /(?:^|[\s.,;:])(?:пр|практ|практика|семинар|сем|лаб|лабораторн|лек|лекц|лекция)(?=$|[\s.,;:])/i.test(
+        normalized
+      );
+
     // Для PRACTICE и OTHER требуем явное ключевое слово, если confidence не очень высокий
-    if ((classification.type === LESSON_TYPES.PRACTICE || classification.type === LESSON_TYPES.OTHER) && classification.confidence < 0.8) {
+    if (
+      (classification.type === LESSON_TYPES.PRACTICE ||
+        classification.type === LESSON_TYPES.OTHER) &&
+      classification.confidence < 0.8
+    ) {
       if (!hasExplicitTypeKeyword) return null;
     }
     // Для LECTURE и LAB также требуем ключевое слово при низком confidence
-    if ((classification.type === LESSON_TYPES.LECTURE || classification.type === LESSON_TYPES.LAB) && classification.confidence < 0.5) {
+    if (
+      (classification.type === LESSON_TYPES.LECTURE || classification.type === LESSON_TYPES.LAB) &&
+      classification.confidence < 0.5
+    ) {
       if (!hasExplicitTypeKeyword) return null;
     }
 
@@ -304,7 +337,11 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
    */
   function extractSubject(
     text: string,
-    extracted: { type?: ExtractedField | null; room?: ExtractedField | null; teacher?: ExtractedField | null }
+    extracted: {
+      type?: ExtractedField | null;
+      room?: ExtractedField | null;
+      teacher?: ExtractedField | null;
+    }
   ): ExtractedField {
     const normalized = norm(text);
     if (!normalized) return { value: '', confidence: 0 };
@@ -323,12 +360,14 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
     if (extracted.teacher?.value) {
       const teacherIdx = subject.indexOf(extracted.teacher.value);
       if (teacherIdx >= 0) {
-        subject = subject.slice(0, teacherIdx) + subject.slice(teacherIdx + extracted.teacher.value.length);
+        subject =
+          subject.slice(0, teacherIdx) + subject.slice(teacherIdx + extracted.teacher.value.length);
       }
     }
 
     // Удаляем ключевые слова типа занятия из начала И из середины
-    const typeKeywords = /(?:^|[\s.,;:])(?:лекция|лек\.?|лабораторн[а-я]*|лаб\.?|практика|практ\.?|пр\.?|семинар|сем\.?)(?=$|[\s.,;:])/gi;
+    const typeKeywords =
+      /(?:^|[\s.,;:])(?:лекция|лек\.?|лабораторн[а-я]*|лаб\.?|практика|практ\.?|пр\.?|семинар|сем\.?)(?=$|[\s.,;:])/gi;
     subject = subject.replace(typeKeywords, ' ');
 
     // Очищаем от служебных слов и лишних разделителей
@@ -342,7 +381,9 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
 
     // Confidence предмета зависит от того, сколько полей удалось извлечь
     let confidence = 0.7;
-    const extractedCount = [extracted.type, extracted.room, extracted.teacher].filter(Boolean).length;
+    const extractedCount = [extracted.type, extracted.room, extracted.teacher].filter(
+      Boolean
+    ).length;
     if (extractedCount >= 2) confidence = 0.9;
     else if (extractedCount === 1) confidence = 0.8;
 
@@ -360,6 +401,7 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
         room: null,
         teacher: null,
         subject: { value: '', confidence: 0 },
+        isExam: false,
         confidence: 0,
       };
     }
@@ -371,6 +413,7 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
         room: { value: '', confidence: 1.0 },
         teacher: { value: '', confidence: 1.0 },
         subject: { value: 'Кураторский час', confidence: 1.0 },
+        isExam: false,
         confidence: 1.0,
       };
     }
@@ -383,18 +426,27 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
     let textForType = normalized;
     if (room?.value) {
       const idx = textForType.indexOf(room.value);
-      if (idx >= 0) textForType = textForType.slice(0, idx) + textForType.slice(idx + room.value.length);
+      if (idx >= 0)
+        textForType = textForType.slice(0, idx) + textForType.slice(idx + room.value.length);
     }
     if (teacher?.value) {
       const idx = textForType.indexOf(teacher.value);
-      if (idx >= 0) textForType = textForType.slice(0, idx) + textForType.slice(idx + teacher.value.length);
+      if (idx >= 0)
+        textForType = textForType.slice(0, idx) + textForType.slice(idx + teacher.value.length);
     }
 
     let type = extractType(textForType);
 
     // Если тип не определен (null) ИЛИ тип OTHER без явного ключевого слова, но есть комната И преподаватель — по умолчанию практика
-    const hasExplicitTypeKeyword = /(?:^|[\s.,;:])(?:пр|практ|практика|семинар|сем|лаб|лабораторн|лек|лекц|лекция)(?=$|[\s.,;:])/i.test(textForType);
-    if ((!type || (type.value === TYPE_IDS.OTHER && !hasExplicitTypeKeyword)) && room?.value && teacher?.value) {
+    const hasExplicitTypeKeyword =
+      /(?:^|[\s.,;:])(?:пр|практ|практика|семинар|сем|лаб|лабораторн|лек|лекц|лекция)(?=$|[\s.,;:])/i.test(
+        textForType
+      );
+    if (
+      (!type || (type.value === TYPE_IDS.OTHER && !hasExplicitTypeKeyword)) &&
+      room?.value &&
+      teacher?.value
+    ) {
       type = { value: TYPE_IDS.PRACTICE, confidence: 0.6 };
     }
 
@@ -403,7 +455,7 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
 
     const confidence = calculateOverallConfidence({ type, room, teacher, subject });
 
-    return { type, room, teacher, subject, confidence };
+    return { type, room, teacher, subject, isExam: examPattern.test(normalized), confidence };
   }
 
   return {

@@ -2,7 +2,7 @@
  * FormatRegistry — реестр форматов парсера.
  * Управляет регистрацией, загрузкой и получением конфигураций форматов.
  */
-import type { FormatConfig } from './types.js';
+import type { FormatConfig } from './types.ts';
 
 /**
  * Класс реестра форматов.

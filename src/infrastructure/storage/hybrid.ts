@@ -83,13 +83,13 @@ export class HybridStorage implements IStorage {
     }
   }
 
-  async set<T>(key: string, value: T): Promise<void> {
+  async set<T>(key: string, value: T): Promise<boolean> {
     const json = serializeStorageValue(value);
 
     // Try localStorage first
     try {
       localStorage.setItem(key, json);
-      return;
+      return true;
     } catch {
       // Fall through to IndexedDB
     }
@@ -103,8 +103,16 @@ export class HybridStorage implements IStorage {
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
       });
+      return true;
     } catch (err) {
-      console.error('[Storage] Failed to save:', err);
+      // A failed write is reported to the caller as `false`; the previously
+      // cached value is left untouched. No payload is logged.
+      console.warn(
+        '[Storage] Failed to save key',
+        key,
+        err instanceof Error ? err.name : 'unknown'
+      );
+      return false;
     }
   }
 

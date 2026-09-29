@@ -1,0 +1,27 @@
+{
+  "parserContractVersion": "1.0.0",
+  "thresholds": {
+    "recordAccuracy": 0.95,
+    "precision": 0.95,
+    "recall": 0.95,
+    "criticalFields": 1
+  },
+  "fixtures": [
+    {
+      "id": "schedule-tracked",
+      "source": "data/schedule.xls",
+      "sourcePolicy": "tracked-real",
+      "expected": "tests/fixtures/real/schedule-tracked.expected.json",
+      "status": "blocked",
+      "blockedReason": "No human-reviewed expected JSON is approved. Structural counts and deterministic hashes may be measured, but quality percentages are intentionally not reported."
+    },
+    {
+      "id": "local-structural-variant-b",
+      "source": "СЖ_МК_2627_1жж_1_нед_МК — почта (1).xls",
+      "sourcePolicy": "local-ignored-real",
+      "expected": "tests/fixtures/real/local-structural-variant-b.expected.json",
+      "status": "blocked",
+      "blockedReason": "The second real workbook is locally available and ignored, but sanitizing it and approving a human-reviewed oracle are not complete. It must not be copied into public or client assets."
+    }
+  ]
+}

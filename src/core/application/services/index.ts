@@ -17,6 +17,8 @@ import type {
 } from '@core/domain/repositories/ports';
 import {
   loadScheduleUseCase,
+  loadCachedScheduleUseCase,
+  refreshScheduleUseCase,
   subscribeScheduleUseCase,
   checkUpdatesUseCase,
   savePreferencesUseCase,
@@ -34,6 +36,21 @@ export class ScheduleService {
 
   async load(): Promise<ScheduleData> {
     return loadScheduleUseCase(this.repository, this.storage);
+  }
+
+  /** Cached snapshot for an instant first render, or null when there is none. */
+  async loadCached(): Promise<ScheduleData | null> {
+    return loadCachedScheduleUseCase(this.storage);
+  }
+
+  /**
+   * Authoritative reload with a best-effort offline cache refresh.
+   *
+   * Callers apply the returned data immediately; a failed cache write is
+   * reported through `cacheUpdated` and must never remove cached data.
+   */
+  async refresh(_reason: string): Promise<{ data: ScheduleData; cacheUpdated: boolean }> {
+    return refreshScheduleUseCase(this.repository, this.storage);
   }
 
   subscribe(onUpdate: (data: ScheduleData) => void): () => void {
