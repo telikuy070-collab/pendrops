@@ -355,6 +355,13 @@ describe('version reads', () => {
           return builder;
         },
         order: () => builder,
+        // `loadFull` pages through the table, so the lessons query has to
+        // answer a ranged request. The double holds no lessons, so the first
+        // page is empty and the read stops immediately.
+        range: (from, to) => {
+          calls.push({ op: 'range', table, payload: { from, to }, options: null });
+          return Promise.resolve({ data: [], error: null, count: 0 });
+        },
         limit: () => (isVersion ? terminal(rows, error) : builder),
         maybeSingle: () => {
           calls.push({ op: 'maybeSingle', table, payload: null, options: null });

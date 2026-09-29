@@ -11,7 +11,12 @@ import type {
   PublishResult,
 } from '@core/domain/repositories/ports';
 import { getSupabaseClient } from './client';
-import { toAppError, PublishAbortedError, ValidationError } from '@core/domain/errors';
+import {
+  toAppError,
+  PublishAbortedError,
+  TruncatedScheduleReadError,
+  ValidationError,
+} from '@core/domain/errors';
 import { withRetry } from '@shared/retry';
 import { logger } from '@shared/logger';
 import { CircuitBreaker } from '@shared/circuitBreaker';
@@ -44,6 +49,43 @@ interface VersionRow {
 const PUBLISH_CHUNK_SIZE = 400;
 
 /**
+ * Rows asked for per read page.
+ *
+ * PostgREST serves at most `max-rows` rows per request regardless of the range
+ * asked for, so this value is the ceiling on a page and the read loop below
+ * walks the rest of the table itself.
+ */
+const READ_PAGE_SIZE = 1000;
+
+/**
+ * Stop after this many pages.
+ *
+ * A pure safety net: it bounds a server that ignores `range` and would
+ * otherwise return the same full page forever. At 1000 rows a page this is
+ * 100 000 lessons, two orders of magnitude above any real week, so reaching it
+ * is itself a failure and is reported as one rather than as a short schedule.
+ */
+const MAX_READ_PAGES = 100;
+
+/** One page of a lessons read, as PostgREST reports it. */
+interface LessonPage {
+  data: unknown;
+  error: { code?: string; message?: string } | null;
+  /** Rows matching the whole query, not this page; present with `count: 'exact'`. */
+  count?: number | null;
+}
+
+/**
+ * A lessons query that can be narrowed to a page and awaited.
+ *
+ * Stated structurally rather than as a `PostgrestFilterBuilder` so the paging
+ * loop keeps working across supabase-js versions that reshape those generics.
+ */
+type RangeableLessonQuery = PromiseLike<LessonPage> & {
+  range(from: number, to: number): PromiseLike<LessonPage>;
+};
+
+/**
  * Stable uuid v4 for a lesson row.
  * `crypto.randomUUID` needs a secure context, so insecure origins and old
  * browsers fall back to a random hex id — the column only requires a uuid.
@@ -61,6 +103,19 @@ function newRowId(): string {
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
+ * Which read failures are worth another attempt.
+ *
+ * A truncated read is one of them: its usual cause is a publish that replaced
+ * the table between two pages, so the same request issued again reads a
+ * consistent snapshot. Everything else keeps the historical network/timeout
+ * rule.
+ */
+function isRetryableReadError(error: Error): boolean {
+  if (error instanceof TruncatedScheduleReadError) return true;
+  return error.message.includes('network') || error.message.includes('timeout');
 }
 
 export class SupabaseScheduleRepository implements IScheduleRepository {
@@ -81,14 +136,20 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
   async loadFull(): Promise<ScheduleData> {
     return withRetry(
       async () => {
-        // Load lessons with all related data
-        const { data: lessons, error } = await this.client
-          .from('lessons')
-          .select('*')
-          .order('day_order')
-          .order('time');
-
-        if (error) throw toAppError(error);
+        // Load lessons with all related data, page by page.
+        const { rows: lessons } = await this.#readAllLessonPages(() =>
+          this.client
+            .from('lessons')
+            .select('*', { count: 'exact' })
+            .order('day_order')
+            .order('time')
+            // `day_order` and `time` repeat many times across a week, so that
+            // ordering alone is not total. `id` is unique and makes it total,
+            // which is what makes paging over it sound: without the tiebreaker
+            // a row can land on both sides of a page boundary and be fetched
+            // twice while another is never fetched at all.
+            .order('id')
+        );
 
         // Load version. `limit(1)` + first row instead of `maybeSingle()`:
         // the result no longer depends on the table holding exactly one row,
@@ -108,14 +169,68 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
 
         const versionData = (versionRows?.[0] as VersionRow | undefined) ?? null;
 
-        return this.transformRows(lessons || [], versionData);
+        return this.transformRows(lessons, versionData);
       },
       {
         retries: 3,
         baseDelay: 1000,
-        retryable: (e) => e.message.includes('network') || e.message.includes('timeout'),
+        retryable: isRetryableReadError,
       }
     );
+  }
+
+  /**
+   * Read every row of a lessons query, one page at a time.
+   *
+   * A range-less read stops at the server's `max-rows` and reports no error,
+   * which is how 1000 of 1237 lessons used to reach the app as a complete
+   * schedule. The loop instead walks the table with `.range()` until a page
+   * comes back short, and cross-checks the total against the exact count the
+   * server reports: a shortfall raises `TruncatedScheduleReadError` instead of
+   * silently publishing a partial week.
+   *
+   * @param start Builds a fresh query for every page; the builder is consumed
+   *   by `await`, so one instance cannot be reused across pages.
+   */
+  async #readAllLessonPages(
+    start: () => RangeableLessonQuery
+  ): Promise<{ rows: LessonRow[]; expected: number | null }> {
+    const rows: LessonRow[] = [];
+    let expected: number | null = null;
+
+    for (let page = 0; page < MAX_READ_PAGES; page++) {
+      const from = page * READ_PAGE_SIZE;
+      const { data, error, count } = await start().range(from, from + READ_PAGE_SIZE - 1);
+      if (error) throw toAppError(error);
+
+      // PostgREST reports the count for the whole filtered set on every page,
+      // not the page size. The largest value seen wins so a publish that grows
+      // the table mid-read surfaces as a shortfall instead of as extra rows.
+      if (typeof count === 'number' && (expected === null || count > expected)) {
+        expected = count;
+      }
+
+      const batch = (data ?? []) as LessonRow[];
+      // An empty page means the end. Stopping here and letting the count check
+      // below decide whether that end was the real one is what turns a silent
+      // truncation into a reported error.
+      if (batch.length === 0) break;
+      rows.push(...batch);
+      // A short page is the last page: the server had nothing more to give.
+      if (batch.length < READ_PAGE_SIZE) break;
+    }
+
+    if (expected !== null) {
+      if (rows.length !== expected) {
+        throw new TruncatedScheduleReadError(rows.length, expected);
+      }
+    } else if (rows.length >= MAX_READ_PAGES * READ_PAGE_SIZE) {
+      // Every page came back full and the server never reported a total, so
+      // the read is provably incomplete.
+      throw new TruncatedScheduleReadError(rows.length, null);
+    }
+
+    return { rows, expected };
   }
 
   private transformRows(rows: LessonRow[], versionData: VersionRow | null): ScheduleData {
@@ -416,14 +531,19 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
 
         const cursor = versionData?.updated_at || new Date(0).toISOString();
 
-        // Fetch lessons updated after the cursor
-        const { data: lessons, error } = await this.client
-          .from('lessons')
-          .select('*')
-          .gt('updated_at', cursor)
-          .order('updated_at');
-
-        if (error) throw toAppError(error);
+        // Fetch lessons updated after the cursor, page by page for the same
+        // reason `loadFull` pages: a range-less read stops at `max-rows`.
+        const { rows: lessons } = await this.#readAllLessonPages(() =>
+          this.client
+            .from('lessons')
+            .select('*', { count: 'exact' })
+            .gt('updated_at', cursor)
+            .order('updated_at')
+            // A single publish stamps every row with one `updated_at`, so that
+            // ordering has a huge tie group. `id` breaks it; without a total
+            // order, paging would repeat and skip rows inside the tie group.
+            .order('id')
+        );
 
         // Get current version
         const { data: currentVersionData } = await this.client
@@ -432,7 +552,7 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
           .maybeSingle();
 
         // Transform rows to Lesson entities
-        const transformedLessons: Lesson[] = (lessons || []).map((row: LessonRow) => ({
+        const transformedLessons: Lesson[] = lessons.map((row: LessonRow) => ({
           id: row.id,
           sheetId: row.sheet_id,
           day: row.day as Lesson['day'],
@@ -458,7 +578,7 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
       {
         retries: 3,
         baseDelay: 1000,
-        retryable: (e) => e.message.includes('network') || e.message.includes('timeout'),
+        retryable: isRetryableReadError,
       }
     );
   }

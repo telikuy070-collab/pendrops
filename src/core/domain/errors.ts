@@ -75,6 +75,36 @@ export class PublishAbortedError extends AppError {
   }
 }
 
+/**
+ * A paged read came back short.
+ *
+ * PostgREST caps every response at its `max-rows` setting, so a read that asks
+ * for no explicit range silently stops at that cap: 1000 of 1237 lessons, with
+ * no error and no signal that anything is missing. The repository therefore
+ * pages explicitly and compares what it collected against the exact count the
+ * server reports; a shortfall is reported here rather than shown to the student
+ * as a schedule with days and lessons missing.
+ *
+ * Retryable: the usual cause is a publish that replaced the table while the
+ * pages were being read, which makes the snapshot inconsistent rather than
+ * the schedule itself broken.
+ */
+export class TruncatedScheduleReadError extends AppError {
+  constructor(
+    public readonly received: number,
+    /** Rows the server counted, or null when it reported no count at all. */
+    public readonly expected: number | null
+  ) {
+    super(
+      'SCHEDULE_TRUNCATED',
+      expected === null
+        ? `Расписание загружено не полностью: получено ${received} строк, а сервер не сообщил их общее количество. Обновите страницу.`
+        : `Расписание загружено не полностью: получено ${received} строк из ${expected}. Обновите страницу.`,
+      true
+    );
+  }
+}
+
 export class UnknownError extends AppError {
   constructor(message: string, cause?: Error) {
     super('UNKNOWN_ERROR', message, false, cause);

@@ -65,6 +65,8 @@ import {
 import {
   buildRegions,
   extractBlocks,
+  groupColumnHas,
+  groupColumnSpan,
   regionGroupColumns,
   type Block,
   type GroupRef,
@@ -195,6 +197,14 @@ export interface ParseCellOutcome {
   invalidFields: string[];
   /** Anchor of the merge this cell came from, when the cell is a continuation. */
   anchor?: { row: number; col: number };
+  /**
+   * True when every part of this cell restated a lesson that another cell in
+   * the same row owns, so the cell published nothing.
+   *
+   * It is a fact about the FILE, not a parsing failure: the lesson is on the
+   * schedule either way, so the cell must not be counted as a hole.
+   */
+  restated?: boolean;
   /** Region this cell belongs to, -1 when outside every region. */
   regionIndex: number;
 }
@@ -321,8 +331,13 @@ export function validateCriticalFields(lesson: ParsedLesson | Record<string, unk
 /** One group column an authored cell speaks for. */
 export interface Slot {
   group: GroupRef;
-  /** Region column the group came from. */
-  col: number;
+  /**
+   * True when this cell owns the group's lesson.
+   *
+   * A cell that only reaches the group's continuation columns restates a lesson
+   * the owning cell already publishes.
+   */
+  owned: boolean;
 }
 
 interface InventoryCell {
@@ -490,12 +505,13 @@ export class ParserEngine {
     const inventory = this.#inventory(grid, regions);
     const typeStats = this.#collectTypeStats(grid, inventory);
     const context = this.#axisContext(grid, regions);
+    const owners = this.#groupOwners(grid, regions);
 
     const cellOutcomes: ParseCellOutcome[] = inventory.map((cell) => {
       if (!cell.inRegion) return this.#outsideOutcome(grid, cell);
       const region = regions[cell.regionIndex];
       const stats = typeStats.get(cell.regionIndex);
-      return this.#parseCell(grid, region, cell, context, stats);
+      return this.#parseCell(grid, region, cell, context, stats, owners);
     });
 
     const rowOutcomes = this.#rowDiagnostics(grid, regions, sheetName);
@@ -564,7 +580,7 @@ export class ParserEngine {
   }
 
   #isGroupColumn(region: Region, col: number): boolean {
-    return region.blocks.some((block) => block.groups.some((group) => group.col === col));
+    return region.blocks.some((block) => block.groups.some((group) => groupColumnHas(group, col)));
   }
 
   /**
@@ -575,6 +591,9 @@ export class ParserEngine {
    * (a merged `ПСТ-1-25 (2)` spanning E and F). Counting physical cells there
    * would demand a second lesson for a subgroup that occupies one slot, and the
    * published count would sit permanently below this figure.
+   *
+   * A group column is scanned across its whole width, so a slot whose text sits
+   * in a continuation column of a merged header is still counted.
    *
    * The number is a ceiling, not a target: a source may legitimately author the
    * same slot in two separate cells, in which case the lessons legitimately
@@ -587,7 +606,8 @@ export class ParserEngine {
       for (const block of region.blocks) {
         for (const group of block.groups) {
           for (let row = region.headerRow + 1; row < region.endRow; row++) {
-            if (!cellAt(grid, row, group.col)) continue;
+            const hasText = groupColumnSpan(group).some((col) => cellAt(grid, row, col));
+            if (!hasText) continue;
             slots.add(`${row}|${group.code}|${group.subgroup}`);
           }
         }
@@ -637,7 +657,12 @@ export class ParserEngine {
       const blockByCol = new Map<number, Block>();
       const axes = new Map<Block, BlockAxes>();
       for (const block of region.blocks) {
-        for (const group of block.groups) blockByCol.set(group.col, block);
+        for (const group of block.groups) {
+          // Every physical column of the group answers to the same block, so
+          // a cell sitting in a continuation column of a merged header still
+          // gets the block's day / lesson-number / time axes.
+          for (const col of groupColumnSpan(group)) blockByCol.set(col, block);
+        }
         const from = region.headerRow + 1;
         const to = region.endRow - 1;
         // Time and lesson number use a plausibility gate: a value only
@@ -735,15 +760,78 @@ export class ParserEngine {
   // ------------------------------------------------------------------
 
   /**
+   * Which authored cell owns each group column in each row.
+   *
+   * A group column printed across several physical columns (a merged
+   * `ПСТ-1-25 (2)` over E and F) is one group column, and a data row can reach
+   * into it from either side. Ownership decides which of those cells publishes
+   * the group's lesson, so it cannot be decided by one cell in isolation:
+   *
+   *  1. the cell written in the group's own FIRST column owns it — that is the
+   *     column the header merge starts at, and the one a cell merged from the
+   *     left reaches;
+   *  2. when no cell wrote there, the leftmost cell that reaches one of the
+   *     group's continuation columns owns it. Without this fallback the lesson
+   *     would be dropped even though the file authored it, and the cell would
+   *     be reported as a hole in the table;
+   *  3. otherwise the group column holds no lesson in this row.
+   *
+   * Keyed `regionIndex:row:group.col`, and the value is the owning cell's
+   * anchor column.
+   */
+  #groupOwners(grid: Grid, regions: Region[]): Map<string, number> {
+    const owners = new Map<string, number>();
+    regions.forEach((region, regionIndex) => {
+      for (const block of region.blocks) {
+        for (const group of block.groups) {
+          for (let row = region.headerRow + 1; row < region.endRow; row++) {
+            let owner = -1;
+            if (cellAt(grid, row, group.col)) {
+              owner = this.#anchorOf(grid, row, group.col).col;
+            } else {
+              for (const col of groupColumnSpan(group)) {
+                if (col === group.col) continue;
+                if (!cellAt(grid, row, col)) continue;
+                owner = this.#anchorOf(grid, row, col).col;
+                break;
+              }
+            }
+            if (owner >= 0) owners.set(`${regionIndex}:${row}:${group.col}`, owner);
+          }
+        }
+      }
+    });
+    return owners;
+  }
+
+  /**
    * Which group columns an authored cell speaks for.
    *
    * A merged cell covers several group columns at once, so the parts it holds
-   * have to be shared out between them. Columns that print the same
-   * group+subgroup pair (a merged header spread over two physical columns)
-   * count once, otherwise a single lesson would be published twice for the
-   * same subgroup.
+   * have to be shared out between them. A group column yields ONE slot even
+   * when it spans several physical columns and the cell covers all of them: a
+   * merge across both of a group's columns is one authored lesson for that
+   * subgroup, not two.
+   *
+   * The interesting case is exactly that wide group column. Two cells on either
+   * side of it both touch the subgroup, and publishing a lesson from each is
+   * what showed the student two identical cards for one lesson. `owners` says
+   * which of them owns the group; the other restates the same lesson, and its
+   * part is dropped rather than published twice.
+   *
+   * Ownership is positional and comes from the sheet geometry. Lesson text is
+   * never compared: two different lessons written into the same wide group
+   * column both stay, and the surplus is reported instead of resolved, because
+   * resolving it would be data loss.
    */
-  #slotsFor(grid: Grid, region: Region, row: number, col: number): Slot[] {
+  #slotsFor(
+    grid: Grid,
+    region: Region,
+    regionIndex: number,
+    owners: Map<string, number>,
+    row: number,
+    col: number
+  ): Slot[] {
     const span = mergeAt(grid, row, col);
     const from = span ? span.col : col;
     const to = span ? span.lastCol : col;
@@ -751,20 +839,19 @@ export class ParserEngine {
     // Restrict the search to the block that owns the anchor, so a wide merge
     // cannot reach into the neighbouring table's group columns.
     const owner =
-      region.blocks.find((block) => block.groups.some((group) => group.col === from)) ??
+      region.blocks.find((block) => block.groups.some((group) => groupColumnHas(group, from))) ??
       region.blocks.find((block) =>
-        block.groups.some((group) => group.col >= from && group.col <= to)
+        block.groups.some((group) => groupColumnSpan(group).some((c) => c >= from && c <= to))
       );
 
     const slots: Slot[] = [];
-    const seen = new Set<string>();
-    for (let c = from; c <= to; c++) {
-      const group = owner?.groups.find((candidate) => candidate.col === c);
-      if (!group) continue;
-      const key = `${group.code}|${group.subgroup}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      slots.push({ group, col: c });
+    for (const group of owner?.groups ?? []) {
+      // The cell reaches this group when their column ranges overlap at all.
+      if (group.lastCol < from || group.col > to) continue;
+      slots.push({
+        group,
+        owned: owners.get(`${regionIndex}:${row}:${group.col}`) === col,
+      });
     }
     return slots;
   }
@@ -774,7 +861,8 @@ export class ParserEngine {
     region: Region,
     cell: InventoryCell,
     context: AxisContext,
-    typeStats: TypeStats | undefined
+    typeStats: TypeStats | undefined,
+    owners: Map<string, number>
   ): ParseCellOutcome {
     const raw = cellAt(grid, cell.row, cell.col);
     const anchor = this.#anchorOf(grid, cell.row, cell.col);
@@ -806,7 +894,7 @@ export class ParserEngine {
       };
     }
 
-    const slots = this.#slotsFor(grid, region, cell.row, cell.col);
+    const slots = this.#slotsFor(grid, region, cell.regionIndex, owners, cell.row, cell.col);
     if (!slots.length) {
       return {
         ...base,
@@ -841,11 +929,27 @@ export class ParserEngine {
     const cellWarnings = new Set<string>();
     const failures: string[] = [];
     const invalidFields = new Set<string>();
+    const restated: string[] = [];
     let publishedSomething = false;
     let lostSlot = false;
 
     for (const assignment of assignments) {
-      for (const slot of assignment.slots) {
+      // A part that landed on a group column this cell does not own restates a
+      // lesson another cell already publishes for that subgroup. Publishing it
+      // would show the student the same card twice, so it is dropped here —
+      // but it is reported rather than dropped in silence, because a source
+      // that puts two DIFFERENT lessons in one wide group column loses one of
+      // them either way and the admin has to know which.
+      const owned = assignment.slots.filter((slot) => slot.owned);
+      const foreign = assignment.slots.filter((slot) => !slot.owned);
+      if (foreign.length) {
+        const group = foreign[0].group;
+        const names = foreign
+          .map((slot) => `${slot.group.code}(${slot.group.subgroup})`)
+          .join(', ');
+        restated.push(`«${assignment.part.text}» → ${names} (уже объявлено в соседней ячейке)`);
+      }
+      for (const slot of owned) {
         const built = this.#buildLesson(
           assignment.part,
           context,
@@ -889,8 +993,23 @@ export class ParserEngine {
       }
     }
 
+    // The restatement itself is a property of the file, not of this cell's
+    // parsing, so it is surfaced as a warning on the cell that carries it.
+    if (restated.length) {
+      for (const note of restated) cellWarnings.add(`restated_subgroup: ${note}`);
+    }
+
     if (!lessons.length) {
-      const status: ParseCellStatus = publishedSomething ? 'partial' : 'unresolved';
+      // A cell whose every part restates a lesson another cell owns published
+      // nothing here, but it was never a hole: the lesson is on the schedule,
+      // published from the owning cell. Reporting it as `unresolved` would
+      // charge the file for a cell it authored correctly.
+      const status: ParseCellStatus =
+        publishedSomething || restated.length
+          ? restated.length
+            ? 'lesson'
+            : 'partial'
+          : 'unresolved';
       return {
         ...base,
         status,
@@ -899,9 +1018,12 @@ export class ParserEngine {
         partIndexes: [],
         warnings: [...cellWarnings],
         invalidFields: [...invalidFields],
-        reason: failures.length
-          ? `Занятие не собрано — ${failures.join('; ')}`
-          : 'Занятие не собрано',
+        restated: restated.length > 0,
+        reason: restated.length
+          ? `Занятие объявлено в соседней ячейке — ${restated.join('; ')}`
+          : failures.length
+            ? `Занятие не собрано — ${failures.join('; ')}`
+            : 'Занятие не собрано',
       };
     }
 
@@ -914,11 +1036,14 @@ export class ParserEngine {
       partIndexes,
       warnings: [...cellWarnings],
       invalidFields: [],
+      restated: restated.length > 0,
       reason: lostSlot
         ? `Часть подгрупп не разобрана — ${failures.join('; ')}`
-        : warned
-          ? 'Занятие собрано с предупреждениями'
-          : 'Занятие разобрано полностью',
+        : restated.length
+          ? `Занятие собрано, часть подгрупп продублирована в соседней ячейке — ${restated.join('; ')}`
+          : warned
+            ? 'Занятие собрано с предупреждениями'
+            : 'Занятие разобрано полностью',
     };
   }
 
@@ -1154,6 +1279,12 @@ export class ParserEngine {
       }
 
       if (!cell.lessons.length) {
+        if (cell.restated) {
+          // Published by the cell that owns the group column; see the field
+          // docs. Counting it as rejected would both invent a data problem and
+          // put a rejection in the report for a correctly authored cell.
+          continue;
+        }
         if (cell.status === 'unresolved') {
           rejected.push({
             status: 'rejected',

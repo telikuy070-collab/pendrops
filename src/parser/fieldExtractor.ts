@@ -336,6 +336,30 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
   }
 
   /**
+   * Удаляет все вхождения `value` из `text`, нечувствительно к пробелам.
+   *
+   * Извлечённые значения схлопывают внутренние пробелы (`№7 корпус  404` →
+   * `№7 корпус 404`), а исходный текст ячейки сохраняет авторскую разрядку.
+   * Поэтому поиск через `indexOf` по схлопнутому значению в несклопнутом
+   * тексте не находил ничего, и аудитория оставалась в предмете: строка
+   * выглядела как «Кыргызстан географиясы №7 корпус 402 №7 корпус 402».
+   */
+  function removeAllLoose(text: string, value: string): string | null {
+    const words = norm(value).split(/\s+/).filter(Boolean);
+    if (!words.length) return null;
+    const escaped = words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    // Пробелы внутри значения совпадают с любым пробелом, а границы заданы
+    // lookahead/lookbehind по буквам и цифрам, а не `\b`: кириллица с `\b` не
+    // работает, а начало строки должно находиться наравне с серединой.
+    const re = new RegExp(
+      `(?<![\\p{L}\\p{N}])[\\s]*${escaped.join('\\s+')}(?![\\p{L}\\p{N}])`,
+      'giu'
+    );
+    const replaced = text.replace(re, ' ');
+    return replaced === text ? null : replaced;
+  }
+
+  /**
    * Извлекает предмет как всё остальное после удаления type/room/teacher
    */
   function extractSubject(
@@ -351,21 +375,17 @@ export function createFieldExtractor(config: FieldExtractorConfig = {}) {
 
     let subject = normalized;
 
-    // Удаляем комнату
+    // Удаляем комнату. Удаляются ВСЕ вхождения: ячейка может назвать ту же
+    // аудиторию и в предмете, и в конце, и оставлять хвост — это ровно тот
+    // повтор, который виден в неделе. Само значение `room` при этом не
+    // меняется, поэтому урок сохраняет аудиторию.
     if (extracted.room?.value) {
-      const roomIdx = subject.indexOf(extracted.room.value);
-      if (roomIdx >= 0) {
-        subject = subject.slice(0, roomIdx) + subject.slice(roomIdx + extracted.room.value.length);
-      }
+      subject = removeAllLoose(subject, extracted.room.value) ?? subject;
     }
 
-    // Удаляем преподавателя
+    // Удаляем преподавателя — по той же причине и тем же способом.
     if (extracted.teacher?.value) {
-      const teacherIdx = subject.indexOf(extracted.teacher.value);
-      if (teacherIdx >= 0) {
-        subject =
-          subject.slice(0, teacherIdx) + subject.slice(teacherIdx + extracted.teacher.value.length);
-      }
+      subject = removeAllLoose(subject, extracted.teacher.value) ?? subject;
     }
 
     // Удаляем ключевые слова типа занятия из начала И из середины

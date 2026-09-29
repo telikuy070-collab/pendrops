@@ -12,17 +12,44 @@
  * sheet's content).
  */
 import { norm } from '../text.js';
-import type { Grid } from './grid.ts';
+import { mergeAt, type Grid } from './grid.ts';
 
 export interface GroupRef {
-  /** 0-based column index. */
+  /**
+   * First 0-based physical column of the group column.
+   *
+   * For a header merged across several columns this is the anchor, and `col`
+   * alone is NOT the extent of the group: use `lastCol`, or the
+   * `groupColumnSpan` helper, to get the columns it occupies.
+   */
   col: number;
+  /**
+   * Last 0-based physical column of the group column, inclusive.
+   *
+   * A header merged over `E6:F6` yields `col = 4, lastCol = 5`: ONE group
+   * column occupying two physical columns. Reading the merged header once per
+   * covered column instead is what made two neighbouring data cells claim the
+   * same subgroup, and published the same lesson twice.
+   */
+  lastCol: number;
   /** Group code without the subgroup suffix, e.g. `ПСТ-1-25`. */
   code: string;
   /** Subgroup taken from the header cell, e.g. `1` in `ПСТ-1-25 (1)`. */
   subgroup: string;
   /** Raw header text, kept for diagnostics. */
   raw: string;
+}
+
+/** Every physical column a group column occupies, ascending. */
+export function groupColumnSpan(group: GroupRef): number[] {
+  const span: number[] = [];
+  for (let col = group.col; col <= group.lastCol; col++) span.push(col);
+  return span;
+}
+
+/** True when `group` occupies the given physical column. */
+export function groupColumnHas(group: GroupRef, col: number): boolean {
+  return col >= group.col && col <= group.lastCol;
 }
 
 export interface Block {
@@ -85,25 +112,50 @@ export function extractBlocks(grid: Grid, headerRow: number, syntax: HeaderSynta
     const timeCol = i + 2;
     const groups: GroupRef[] = [];
 
+    // The block ends at the next day header, so a group column can never claim
+    // a column that belongs to the next table.
+    let blockEnd = header.length;
+    for (let k = i + 3; k < header.length; k++) {
+      if (headerDayCell(norm(header[k]))) {
+        blockEnd = k;
+        break;
+      }
+    }
+
     let j = i + 3;
-    while (j < header.length && !headerDayCell(norm(header[j]))) {
+    while (j < blockEnd) {
       const cellText = norm(header[j]);
-      if (cellText) {
-        const codeMatch = cellText.match(codeRe);
-        if (codeMatch) {
-          let code = codeMatch[0];
-          let subgroup = '1';
-          if (subgroupRe) {
-            const subMatch = cellText.match(subgroupRe);
-            if (subMatch?.[1]) {
-              subgroup = subMatch[1];
-              code = code.replace(subMatch[0], '').trim();
-            }
-          }
-          groups.push({ col: j, code, subgroup, raw: cellText });
+      if (!cellText) {
+        j++;
+        continue;
+      }
+      const codeMatch = cellText.match(codeRe);
+      if (!codeMatch) {
+        j++;
+        continue;
+      }
+
+      let code = codeMatch[0];
+      let subgroup = '1';
+      if (subgroupRe) {
+        const subMatch = cellText.match(subgroupRe);
+        if (subMatch?.[1]) {
+          subgroup = subMatch[1];
+          code = code.replace(subMatch[0], '').trim();
         }
       }
-      j++;
+
+      // A merged header cell is ONE group column that happens to be printed
+      // across several physical columns. Reading it once per covered column
+      // would register the same subgroup twice, and two separate data cells
+      // on either side of the merge would then each publish a lesson for it —
+      // the same lesson, shown to the student twice. The header merge is the
+      // only thing in the file that says those columns are one group, so it is
+      // what defines the column's extent.
+      const span = mergeAt(grid, headerRow, j);
+      const lastCol = Math.min(span ? span.lastCol : j, blockEnd - 1);
+      groups.push({ col: j, lastCol, code, subgroup, raw: cellText });
+      j = lastCol + 1;
     }
     if (groups.length) blocks.push({ dayCol, paraCol, timeCol, groups });
     i = j;
@@ -185,7 +237,9 @@ export function buildRegions(
 /** All group columns of a region, deduplicated and sorted. */
 export function regionGroupColumns(region: Region): number[] {
   const columns = new Set<number>();
-  for (const block of region.blocks) for (const group of block.groups) columns.add(group.col);
+  for (const block of region.blocks) {
+    for (const group of block.groups) for (const col of groupColumnSpan(group)) columns.add(col);
+  }
   return [...columns].sort((a, b) => a - b);
 }
 
@@ -193,7 +247,7 @@ export function regionGroupColumns(region: Region): number[] {
 export function isRegionCell(region: Region, row: number, col: number): boolean {
   if (row < region.headerRow) return false;
   for (const block of region.blocks) {
-    if (block.groups.some((group) => group.col === col)) return true;
+    if (block.groups.some((group) => groupColumnHas(group, col))) return true;
   }
   return false;
 }

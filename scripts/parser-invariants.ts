@@ -80,7 +80,11 @@ export function expectInventory(
   const lessonSlots = new Set<string>();
   for (const region of regions) {
     for (const col of regionGroupColumns(region)) {
-      const group = region.blocks.flatMap((block) => block.groups).find((g) => g.col === col);
+      // A header merged over several columns is ONE group column, so the
+      // lookup is by the columns the group occupies, not by its anchor alone.
+      const group = region.blocks
+        .flatMap((block) => block.groups)
+        .find((g) => g.col <= col && col <= g.lastCol);
       for (let row = region.headerRow + 1; row < region.endRow; row++) {
         const text = cellAt(grid, row, col);
         if (!text) continue;

@@ -651,10 +651,7 @@ describe('the real workbook', () => {
 
   it('never gives one authored cell two lessons for the same subgroup', () => {
     // Within a cell this is a parser defect: the merge expansion plus part
-    // distribution would be double-assigning a group. Across different cells it
-    // is not a defect — the real ПСТ sheet authors subgroup 2 twice in two
-    // separate merged cells (D8:E8 and F8:G8), and dropping either one would be
-    // data loss. So the invariant is scoped to a single authored cell.
+    // distribution would be double-assigning a group.
     for (const [name, result] of Object.entries(parsed.sheets)) {
       for (const cell of result.cellOutcomes) {
         const slots = cell.lessons.map(
@@ -666,29 +663,225 @@ describe('the real workbook', () => {
     }
   });
 
-  it('reports the duplicates the source itself authors', () => {
-    // Documented, not hidden: these are cells in the file that assign the same
-    // slot twice. They are the reason the per-cell scope above is used.
-    const repeated = [];
+  it('never publishes two lessons for the same slot, even from different cells', () => {
+    // The ПСТ sheet authors one subgroup across two physical columns, and a
+    // data row can reach that subgroup from both sides — the real file did
+    // exactly that in D8:E8 and F8:G8, so the same lesson was published twice
+    // and the student saw two identical cards. A slot now has exactly one
+    // owner per row, so the whole schedule holds one lesson per slot.
     for (const [name, result] of Object.entries(parsed.sheets)) {
       const bySlot = new Map();
-      for (const outcome of result.accepted) {
-        const { lesson, provenance } = outcome;
-        const key = `${lesson.day}|${lesson.time}|${lesson.para}|${lesson.group}|${lesson.subgroup}|${lesson.subject}`;
-        bySlot.set(key, [
-          ...(bySlot.get(key) ?? []),
-          `${provenance.sourceRow}:${provenance.sourceColumn}`,
-        ]);
+      for (const { lesson } of result.accepted) {
+        const key = `${lesson.day}|${lesson.time}|${lesson.para}|${lesson.group}|${lesson.subgroup}`;
+        bySlot.set(key, [...(bySlot.get(key) ?? []), lesson]);
       }
-      for (const [key, places] of bySlot) {
-        if (places.length > 1) repeated.push({ name, key, places });
+      for (const [key, lessons] of bySlot) {
+        expect(lessons.length, `${name} slot ${key}`).toBe(1);
       }
     }
-    // Small and fully attributable: every one names the two authored cells.
-    expect(repeated.length).toBeLessThanOrEqual(4);
-    for (const entry of repeated) {
-      expect(new Set(entry.places).size, entry.key).toBe(entry.places.length);
+  });
+
+  it('keeps the consolidation visible instead of dropping it silently', () => {
+    // The lesson is not lost, but the cell that restated it is recorded, so
+    // the report shows the file really does author that slot from two sides.
+    const restated = Object.entries(parsed.sheets).flatMap(([name, result]) =>
+      result.cellOutcomes
+        .filter((cell) => cell.restated)
+        .map((cell) => `${name} r${cell.row + 1}c${cell.col + 1}`)
+    );
+    expect(restated.length).toBeGreaterThan(0);
+    for (const place of restated) {
+      expect(place).toMatch(/^.+ r\d+c\d+$/);
     }
+  });
+
+  it('leaves the room number out of the subject', () => {
+    // "Кыргызстан географиясы №7 корпус 402 №7 корпус 402" — the room is
+    // extracted once and removed from the subject wherever it appears, so the
+    // week view does not print the auditorium twice.
+    for (const [name, result] of Object.entries(parsed.sheets)) {
+      for (const { lesson, provenance } of result.accepted) {
+        if (!lesson.room) continue;
+        const roomDigits = (lesson.room.match(/\d+/g) ?? []).join('');
+        if (!roomDigits) continue;
+        const subjectDigits = (lesson.subject.match(/\d+/g) ?? []).join('');
+        expect(
+          subjectDigits.includes(roomDigits),
+          `${name} r${provenance.sourceRow}: "${lesson.subject}" still carries "${lesson.room}"`
+        ).toBe(false);
+      }
+    }
+  });
+});
+
+describe('a subgroup printed across two columns', () => {
+  // The real ПСТ geometry: the header prints `ПСТ-1-25 (2)` merged over two
+  // physical columns, so that subgroup is ONE column of the table. A data row
+  // can reach it from either side, and the old per-column reading registered
+  // the subgroup twice and published the same lesson from both sides.
+  const wideHeader = [
+    'Апта күндөрү',
+    'Паралар',
+    'Убакты',
+    'ПСТ-1-25 (1)',
+    'ПСТ-1-25 (2)',
+    '',
+    'ПСТ-1-25 (3)',
+  ];
+  /** The wide header cell: subgroup 2 printed across columns E and F. */
+  const WIDE_HEADER_MERGE = [0, 4, 0, 5];
+  const PHILOSOPHY = 'Философия пр., №7 корпус  404 Муратов Т.';
+  const HEALTH =
+    'Саламаттыкты сактоодогу ишкердик жана менеджмент пр.,  №7 корп., 403 Абдураимов К.';
+
+  it('registers the merged header as one group column, not two', () => {
+    const result = parse(
+      [wideHeader, ['Шаршемби', '2', '09:30-10:50', '', '', '', '']],
+      [WIDE_HEADER_MERGE]
+    );
+
+    // Three subgroup columns. Read per physical column, the expanded header
+    // would instead yield four, with subgroup 2 registered twice.
+    expect(result.stats.groupsFound).toBe(3);
+  });
+
+  it('publishes one lesson per subgroup when both sides name the same lesson', () => {
+    // D8:E8 carries PHILOSOPHY for subgroup 1 and HEALTH for subgroup 2;
+    // F8:G8 restates HEALTH for subgroup 2 and PHILOSOPHY for subgroup 3.
+    // Subgroup 2 is one column of the table, so it is one lesson.
+    const result = parse(
+      [
+        wideHeader,
+        [
+          'Шаршемби',
+          '2',
+          '09:30-10:50',
+          `${PHILOSOPHY} / ${HEALTH}`,
+          '',
+          `${HEALTH} / ${PHILOSOPHY}`,
+          '',
+        ],
+      ],
+      [WIDE_HEADER_MERGE, [1, 3, 1, 4], [1, 5, 1, 6]]
+    );
+
+    const slots = result.lessons.map((l) => `${l.group}|${l.subgroup}`);
+    expect(slots).toEqual(['ПСТ-1-25|1', 'ПСТ-1-25|2', 'ПСТ-1-25|3']);
+    // Nothing is lost: each of the three subgroups still has its lesson.
+    expect(result.lessons.map((l) => l.subject)).toEqual([
+      'Философия',
+      'Саламаттыкты сактоодогу ишкердик жана менеджмент',
+      'Философия',
+    ]);
+    expect(result.stats.coverage).toBe(1);
+  });
+
+  it('keeps the lesson when only the far side of the wide column is filled', () => {
+    // Subgroup 2's OWN first column is empty, so nothing owns it by that rule.
+    // The right cell reaches it only through its continuation column, and that
+    // lesson must not be dropped for want of an owner.
+    const result = parse(
+      [
+        wideHeader,
+        [
+          'Шаршемби',
+          '2',
+          '09:30-10:50',
+          'Физика пр., №7 корпус 101 Иванов И.',
+          '',
+          'Химия пр., №7 корпус 102 Петров П. / Биология пр., №7 корпус 103 Сидоров С.',
+          '',
+        ],
+      ],
+      [WIDE_HEADER_MERGE, [1, 5, 1, 6]]
+    );
+
+    // All three subgroups keep a lesson, so nothing was lost to the merge.
+    const slots = result.lessons.map((lesson) => lesson.subgroup + '/' + lesson.subject).sort();
+    expect(slots).toEqual(['1/Физика', '2/Химия', '3/Биология']);
+    expect(result.stats.coverage).toBe(1);
+  });
+
+  it('keeps two different subjects that one cell assigns to the same subgroup', () => {
+    // A single cell naming two lessons, both explicitly for subgroup 1. This is
+    // a legitimate second lesson in the same slot, and dropping either one
+    // would be data loss — the reason the fix above decides ownership from the
+    // sheet geometry and never from comparing lesson text.
+    const result = parse(
+      [
+        wideHeader,
+        [
+          'Шаршемби',
+          '2',
+          '09:30-10:50',
+          'Физика лаб. гр.1 №7 корпус 101 Иванов И. / Химия лаб. гр.1 №7 корпус 102 Петров П.',
+          '',
+          '',
+          '',
+        ],
+      ],
+      [WIDE_HEADER_MERGE]
+    );
+
+    const lessons = result.lessons.filter((l) => l.subgroup === '1');
+    expect(lessons).toHaveLength(2);
+    expect(lessons.map((l) => l.subject).sort()).toEqual(['Физика гр.1', 'Химия гр.1']);
+  });
+});
+
+describe('the room must not survive in the subject', () => {
+  const simpleHeader = ['Апта күндөрү', 'Паралар', 'Убакты', 'ЛД-1-25 (1)'];
+
+  it('removes the room the subject repeats with the authored spacing', () => {
+    // The cell writes "№7 корпус  402" with the author's double space. The
+    // extracted room is whitespace-collapsed, so a literal search for it in the
+    // un-collapsed text found nothing and the room stayed in the subject.
+    const result = parse([
+      simpleHeader,
+      [
+        'Понедельник',
+        '1',
+        '08:00-09:20',
+        'Кыргызстан  географиясы пр., №7 корпус  402 Калмурзаева Р.',
+      ],
+    ]);
+
+    const [lesson] = result.lessons;
+    expect(lesson.room).toBe('№7 корпус 402');
+    expect(lesson.subject).toBe('Кыргызстан географиясы');
+  });
+
+  it('removes a trailing room written as "№7 корп., 349"', () => {
+    const result = parse([
+      simpleHeader,
+      ['Понедельник', '1', '08:00-09:20', 'Ден соолук билими №7 корп., 349 Асанов А.'],
+    ]);
+
+    const [lesson] = result.lessons;
+    expect(lesson.room).toBe('№7 корп., 349');
+    expect(lesson.subject).toBe('Ден соолук билими');
+  });
+
+  it('keeps both subjects of a cell that holds two of them', () => {
+    // The slash here separates two different subjects, not a room range, and
+    // both have to survive the room being cleaned out of the second one.
+    const result = parse([
+      simpleHeader,
+      [
+        'Понедельник',
+        '1',
+        '08:00-09:20',
+        'Педиатрия 2 / Жугуштуу коопсуздук фельдшердик негиздери менен №7 корп. 215 Вакансия 1 ТПиА',
+      ],
+    ]);
+
+    const [lesson] = result.lessons;
+    expect(lesson.room).toBe('№7 корп. 215');
+    expect(lesson.subject).toContain('Педиатрия 2');
+    expect(lesson.subject).toContain('Жугуштуу коопсуздук фельдшердик негиздери менен');
+    // The separator and both subjects are intact; only the repeated room went.
+    expect(lesson.subject).toContain('/');
+    expect(lesson.subject).not.toContain('215');
   });
 });
 
