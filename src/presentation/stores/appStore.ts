@@ -12,6 +12,23 @@ import type {
 } from '@core/domain/entities/types';
 import { signal, computed, effect, batch } from '@preact/signals';
 import { logger } from '@shared/logger';
+import { buildWeekPlan } from '@core/domain/weekPlan';
+import type { DayPlan } from '@core/domain/weekPlan';
+import { searchLessons } from '@core/domain/search';
+import { resolveConnectivity } from '@core/domain/connectivity';
+import type { ConnectivityResult } from '@core/domain/connectivity';
+import { scopeChanges } from '@core/domain/scheduleDiff';
+import type { ScheduleChanges } from '@core/domain/scheduleDiff';
+import {
+  hasSavedGroup,
+  isBrowsingOtherGroup,
+  resolveStartScreen,
+  goToMySchedule as mySchedulePatch,
+  rememberAsMySchedule as rememberAsMySchedulePatch,
+} from '@core/domain/onboarding';
+import type { StartScreen } from '@core/domain/onboarding';
+
+export type ViewMode = 'day' | 'week';
 
 export interface AppState {
   schedule: ScheduleData | null;
@@ -54,6 +71,27 @@ export const ui = signal(initialUI);
 export const currentFilters = signal(initialFilters);
 export const isAdmin = signal(false);
 export const updateAvailable = signal<{ version: string; updatedAt: string } | null>(null);
+
+/** "День" (default) or "Неделя". */
+export const viewMode = signal<ViewMode>('day');
+
+/** Added/removed lessons of the last publish, already scoped by the caller. */
+export const changes = signal<ScheduleChanges | null>(null);
+
+/** The student asked to look at the whole timetable instead of choosing. */
+export const onboardingSkipped = signal(false);
+
+/**
+ * What we know about the connection.
+ *
+ * `browserOnline` is `navigator.onLine`, `loadFailed` is set by the real
+ * authoritative load: an "online" browser that cannot reach Supabase must
+ * still be reported as offline.
+ */
+export const netStatus = signal<{ browserOnline: boolean; loadFailed: boolean }>({
+  browserOnline: true,
+  loadFailed: false,
+});
 
 // Selectors for common derived state
 export const scheduleData = computed(() => schedule.value);
@@ -123,10 +161,17 @@ function parseGroupSelection(selected: string): { code: string; subgroup: string
   return { code: selected, subgroup: null };
 }
 
-export const filteredLessons = computed(() => {
+/**
+ * Lessons of the selected department / group / subgroup, with neither the day
+ * nor the search applied.
+ *
+ * This is the base every other view derives from: the day list, the week
+ * overview and the search block all start here, which is what keeps the search
+ * from narrowing the day filter and vice versa.
+ */
+export const groupLessons = computed(() => {
   const allLessons = lessons.value;
   const prefs = preferences.value;
-  const filters = currentFilters.value;
 
   let result = allLessons;
 
@@ -145,34 +190,98 @@ export const filteredLessons = computed(() => {
     result = result.filter((l) => String(l.subgroup) === String(prefs.activeSubgroup));
   }
 
-  // Filter by day
-  if (filters.day) {
-    result = result.filter((l) => l.day === filters.day);
-  }
+  return result;
+});
 
-  // Filter by search
-  if (filters.search) {
-    const q = filters.search.toLowerCase();
-    result = result.filter((l) =>
-      `${l.day} ${l.time} ${l.group} ${l.subject} ${l.teacher} ${l.room}`.toLowerCase().includes(q)
-    );
-  }
+/**
+ * What the day view renders: the student's own lessons for the selected day.
+ *
+ * The search query is intentionally not applied here — search results are a
+ * separate block so the selected day survives clearing the query.
+ */
+export const filteredLessons = computed(() => {
+  const base = groupLessons.value;
+  const day = currentFilters.value.day;
+
+  const result = day ? base.filter((l) => l.day === day) : base;
 
   // Counts only: lesson objects are never logged (they contain the full
   // schedule and would flood the console on every filter change).
   logger.debug('[filter] applied', {
-    sheet: prefs.currentSheetId,
-    group: prefs.currentGroup,
-    subgroup: prefs.activeSubgroup,
-    total: allLessons.length,
+    sheet: preferences.value.currentSheetId,
+    group: preferences.value.currentGroup,
+    subgroup: preferences.value.activeSubgroup,
+    total: lessons.value.length,
     filtered: result.length,
   });
 
   return result;
 });
 
+/** Matches for the search box, ignoring the day filter on purpose. */
+export const searchResults = computed(() => {
+  const query = currentFilters.value.search;
+  if (!query.trim()) return [];
+  return searchLessons(groupLessons.value, query);
+});
+
+/** Every day of the student's week, in weekday order. */
+export const weekPlan = computed<DayPlan[]>(() =>
+  buildWeekPlan(groupLessons.value, todayName.value)
+);
+
+/** The offline / stale-data notice for the current connection state. */
+export const offlineNotice = computed<ConnectivityResult>(() => {
+  const data = schedule.value;
+  const net = netStatus.value;
+  return resolveConnectivity({
+    browserOnline: net.browserOnline,
+    loadFailed: net.loadFailed,
+    hasData: Boolean(data),
+    updatedAt: data?.updatedAt,
+  });
+});
+
+/** Which of the three start states the app is in right now. */
+export const startScreen = computed<StartScreen>(() => {
+  const data = schedule.value;
+  return resolveStartScreen({
+    loading: ui.value.loading,
+    hasSchedule: Boolean(data && data.sheetsMeta.length),
+    hasSavedGroup: hasSavedGroup(preferences.value),
+    skipped: onboardingSkipped.value,
+  });
+});
+
+/** True while the student is looking at somebody else's group. */
+export const browsingOtherGroup = computed(() => isBrowsingOtherGroup(preferences.value));
+
+/** Changes narrowed to the currently selected group. */
+export const scopedChanges = computed(() =>
+  scopeChanges(changes.value, {
+    sheetId: preferences.value.currentSheetId,
+    group: preferences.value.currentGroup,
+    subgroup: preferences.value.activeSubgroup,
+  })
+);
+
+/**
+ * Why the list is empty, so an empty screen reads as an answer and not as a
+ * failure to load.
+ */
+export const emptyReason = computed(() => {
+  if (!schedule.value || !schedule.value.sheetsMeta.length) {
+    return ui.value.error ? 'load-failed' : 'no-schedule';
+  }
+  if (!preferences.value.currentGroup) return 'no-group';
+  const own = groupLessons.value;
+  if (!own.length) return 'no-group-lessons';
+  if (currentFilters.value.day && !filteredLessons.value.length) return 'no-lessons-today';
+  return 'unknown';
+});
+
 export const days = computed(() => {
-  const lessonList = filteredLessons.value;
+  const lessonList = groupLessons.value;
   const daySet = new Set<DayName>(lessonList.map((l) => l.day));
   const DAY_ORDER: DayName[] = [
     'Понедельник',
@@ -253,6 +362,69 @@ export const actions = {
   setUpdateAvailable(update: { version: string; updatedAt: string } | null) {
     batch(() => {
       updateAvailable.value = update;
+    });
+  },
+
+  setViewMode(mode: ViewMode) {
+    batch(() => {
+      viewMode.value = mode;
+    });
+  },
+
+  setChanges(next: ScheduleChanges | null) {
+    batch(() => {
+      changes.value = next;
+    });
+  },
+
+  setNetStatus(patch: Partial<{ browserOnline: boolean; loadFailed: boolean }>) {
+    batch(() => {
+      netStatus.value = { ...netStatus.value, ...patch };
+    });
+  },
+
+  skipOnboarding() {
+    batch(() => {
+      onboardingSkipped.value = true;
+    });
+  },
+
+  /**
+   * Returns the view to the remembered group.
+   *
+   * The patch is returned as well so the caller can persist exactly what was
+   * applied, instead of a second, possibly different, derivation.
+   */
+  goToMySchedule(): Partial<UserPreferences> {
+    const patch = mySchedulePatch(preferences.value);
+    if (!patch.currentGroup) return patch;
+    batch(() => {
+      preferences.value = { ...preferences.value, ...patch };
+    });
+    return patch;
+  },
+
+  /** Marks the current selection as the remembered one. */
+  rememberCurrentAsMySchedule(): Partial<UserPreferences> {
+    const patch = rememberAsMySchedulePatch(preferences.value);
+    batch(() => {
+      preferences.value = { ...preferences.value, ...patch };
+    });
+    return patch;
+  },
+
+  /** Clearing the search must not touch the selected day. */
+  clearSearch() {
+    batch(() => {
+      currentFilters.value = { ...currentFilters.value, search: '' };
+    });
+  },
+
+  /** Jumps to one weekday from a search result or a change entry. */
+  showDayOf(day: string) {
+    batch(() => {
+      currentFilters.value = { ...currentFilters.value, day };
+      viewMode.value = 'day';
     });
   },
 

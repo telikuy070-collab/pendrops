@@ -10,6 +10,16 @@ import type {
   Group,
 } from '@core/domain/entities/types';
 import type { IScheduleRepository, IStorage } from '@core/domain/repositories/ports';
+import { buildDigest, diffDigests } from '@core/domain/scheduleDiff';
+import type { ScheduleChanges, ScheduleDigest } from '@core/domain/scheduleDiff';
+
+/**
+ * Key of the previously loaded version inside the existing offline storage.
+ *
+ * Reusing the same IStorage port and the same browser store keeps one cache
+ * mechanism instead of a second one next to it.
+ */
+export const SCHEDULE_DIGEST_KEY = 'schedule_cache_previous';
 
 /** Load schedule with fallback chain: cache → DB → empty */
 export async function loadScheduleUseCase(
@@ -70,6 +80,40 @@ export function subscribeScheduleUseCase(
   onUpdate: (data: ScheduleData) => void
 ): () => void {
   return repository.subscribe(onUpdate);
+}
+
+/**
+ * Digest of the version that was on screen before this one, or null when the
+ * app has never stored a baseline. Malformed stored data is treated as "no
+ * baseline": a broken cache must not break the schedule.
+ */
+export async function loadScheduleDigestUseCase(storage: IStorage): Promise<ScheduleDigest | null> {
+  const stored = await storage.get<ScheduleDigest>(SCHEDULE_DIGEST_KEY);
+  if (!stored || !Array.isArray(stored.items) || typeof stored.version !== 'string') {
+    return null;
+  }
+  return stored;
+}
+
+/**
+ * Compares an applied version with the stored baseline and makes the applied
+ * version the new baseline.
+ *
+ * Returns null when there is nothing to show (first run, same version, or no
+ * actual difference) so the UI never renders an empty "Изменения" section.
+ * The baseline is written even when the comparison yields nothing, and a
+ * failed write only costs the next comparison — never the schedule.
+ */
+export async function recordScheduleChangesUseCase(
+  storage: IStorage,
+  data: ScheduleData
+): Promise<ScheduleChanges | null> {
+  const next = buildDigest(data);
+  const previous = await loadScheduleDigestUseCase(storage);
+  if (previous && previous.version === next.version) return null;
+  const changes = diffDigests(previous, next);
+  await storage.set(SCHEDULE_DIGEST_KEY, next);
+  return changes;
 }
 
 /**

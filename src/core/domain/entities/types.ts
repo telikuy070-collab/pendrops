@@ -51,6 +51,22 @@ export interface UserPreferences {
   currentGroup: string;
   activeSubgroup: string;
   hiddenSheets: string[];
+  /**
+   * The remembered "my schedule" selection.
+   *
+   * Browsing another department must not destroy the student's own selection,
+   * so the picker only moves `current*`; these fields change when the student
+   * explicitly says "это моя группа". Older stored preferences have none of
+   * them, and fall back to the current selection.
+   */
+  mySheetId?: string;
+  myGroup?: string;
+  mySubgroup?: string;
+  /**
+   * The student chose "посмотреть всё расписание" instead of picking a group.
+   * Remembered so the first-run chooser really is a first-run thing.
+   */
+  onboardingSkipped?: boolean;
 }
 
 /** Schedule aggregate - what the UI consumes */

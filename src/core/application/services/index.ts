@@ -28,12 +28,14 @@ import {
   refreshScheduleUseCase,
   subscribeScheduleUseCase,
   checkUpdatesUseCase,
+  recordScheduleChangesUseCase,
   savePreferencesUseCase,
   loadPreferencesUseCase,
   filterLessonsUseCase,
   getSheetsUseCase,
   getGroupsUseCase,
 } from '@core/domain/use-cases/schedule';
+import type { ScheduleChanges } from '@core/domain/scheduleDiff';
 
 export class ScheduleService {
   constructor(
@@ -62,6 +64,16 @@ export class ScheduleService {
 
   subscribe(onUpdate: (data: ScheduleData) => void): () => void {
     return subscribeScheduleUseCase(this.repository, onUpdate);
+  }
+
+  /**
+   * Remember the applied version and report what it changed.
+   *
+   * Returns null on the first run and whenever nothing actually changed, so
+   * the caller can keep the "Изменения" section hidden.
+   */
+  async recordChanges(data: ScheduleData): Promise<ScheduleChanges | null> {
+    return recordScheduleChangesUseCase(this.storage, data);
   }
 
   async checkUpdates(currentVersion: string) {

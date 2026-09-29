@@ -42,6 +42,13 @@
       </div>
     </header>
 
+    <!--
+    Offline / stale-data notice. `src/main.ts` fills it in from the real load
+    result, not from `navigator.onLine` alone: a browser that reports a
+    connection it cannot use must still tell the student how old the data is.
+  -->
+    <div id="offlineBar" class="offline-bar" role="status" aria-live="polite" hidden></div>
+
     <section id="quickPick" class="quick-pick hidden">
       <div class="qp-bar">
         <button id="sheetBtn" class="qp-pill" data-empty="true">
@@ -60,6 +67,55 @@
           <span class="qp-pill-caret">▾</span>
         </button>
       </div>
+
+      <!--
+      View tools: back to "my schedule", the День/Неделя switch and the
+      "Изменения" disclosure. All three are hidden until they have something to
+      show, so the toolbar never adds dead controls.
+    -->
+      <div class="qp-tools" id="viewTools" hidden>
+        <button id="myScheduleBtn" class="tool-btn" hidden>← Моё расписание</button>
+        <div class="seg" role="tablist" aria-label="Режим просмотра">
+          <button id="modeDayBtn" type="button" class="seg-btn active" aria-selected="true">
+            День
+          </button>
+          <button id="modeWeekBtn" type="button" class="seg-btn" aria-selected="false">
+            Неделя
+          </button>
+        </div>
+        <button id="changesBtn" class="tool-btn" aria-expanded="false" hidden>
+          Изменения <span id="changesCount" class="tool-badge">0</span>
+        </button>
+      </div>
+
+      <div id="changesPanel" class="changes-panel" hidden></div>
+    </section>
+
+    <!-- Search is a first-class control: it must be reachable without opening
+         the settings modal, and it never narrows the selected day. -->
+    <div class="find-bar">
+      <label class="find-label" for="searchInput">Где у меня пара</label>
+      <input
+        id="searchInput"
+        type="search"
+        enterkeyhint="search"
+        autocomplete="off"
+        placeholder="Предмет, преподаватель, аудитория..."
+      />
+    </div>
+    <!-- Hidden state lives in the `hidden` attribute only: `.search-results
+         [hidden]` is what the stylesheet keys on, so the class was a second
+         spelling of the same thing. -->
+    <section id="searchResults" class="search-results" aria-live="polite" hidden></section>
+
+    <!-- First run: one short chooser instead of an empty schedule. -->
+    <section id="onboarding" class="onboarding hidden" aria-labelledby="onboardingTitle" hidden>
+      <h2 class="ob-title" id="onboardingTitle">Выбери свою группу один раз</h2>
+      <p class="ob-hint" id="onboardingHint">
+        Один раз — дальше запомним и сразу откроем твои пары
+      </p>
+      <div class="ob-list" id="onboardingList"></div>
+      <button type="button" class="ob-skip" id="onboardingSkip">Посмотреть всё расписание</button>
     </section>
 
     <!--
@@ -142,18 +198,32 @@
           <summary>Дополнительные фильтры</summary>
           <div class="secondary-row">
             <div class="field">
-              <label>День</label>
+              <label for="dayFilter">День</label>
               <select id="dayFilter">
                 <option value="">Все</option>
               </select>
             </div>
-            <div class="field field-grow">
-              <label>Поиск</label>
-              <input id="searchInput" type="search" placeholder="Предмет, преподаватель..." />
-            </div>
-            <button id="resetBtn" class="btn ghost">Сброс</button>
+            <button id="resetBtn" class="btn ghost">Очистить поиск</button>
           </div>
         </details>
+
+        <!--
+        Reminders. The section states the browser limitation honestly instead of
+        promising a notification that cannot happen once the app is closed.
+      -->
+        <div class="modal-section" id="reminderSettings">
+          <h3>Напоминания о паре</h3>
+          <div class="modal-hint" id="reminderStatus">—</div>
+          <button type="button" class="btn primary block" id="reminderEnable">
+            Включить напоминания
+          </button>
+          <div class="lead-row" id="reminderLeadRow"></div>
+          <div class="reminder-list" id="reminderList"></div>
+          <p class="modal-note">
+            Напоминание сработает, пока PenDrops открыт в браузере. После закрытия приложения
+            браузер не сможет его показать — это ограничение браузера, а не приложения.
+          </p>
+        </div>
       </div>
     </div>
 
@@ -178,6 +248,14 @@
           <button class="modal-close" data-close="group" aria-label="Закрыть">✕</button>
         </div>
         <div class="picker-list" id="groupList"></div>
+        <!--
+        Browsing another group must not overwrite the remembered one, so the
+        change is made explicit. Hidden while the current group already is the
+        remembered one.
+      -->
+        <button type="button" class="btn ghost block hidden" id="rememberGroupBtn">
+          Сделать моей группой
+        </button>
       </div>
     </div>
 

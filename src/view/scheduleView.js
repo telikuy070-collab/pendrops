@@ -63,7 +63,7 @@ const ensureParsed = (lessons) => {
   }
 };
 
-const cardHtml = (lesson, idx, highlight) => {
+const cardHtml = (lesson, day, idx, highlight, remind) => {
   const tpLabel = TYPE_LABELS[lesson.type] ?? 'Занятие';
   const state = lessonState(lesson);
   const isNow = highlight.now === idx;
@@ -100,8 +100,18 @@ const cardHtml = (lesson, idx, highlight) => {
     </div>`
     : '';
 
+  // Кнопка напоминания рисуется только когда уведомления реально разрешены:
+  // кнопка, которая ничего не делает, хуже её отсутствия.
+  const remindHtml =
+    remind && remind.enabled
+      ? `<button type="button" class="card-remind${remind.on ? ' is-set' : ''}" data-remind-day="${escapeHtml(day)}" data-remind-idx="${idx}">
+        <span class="card-remind-icon" aria-hidden="true">${remind.on ? '🔔✓' : '🔔'}</span>
+        <span>${remind.on ? 'Напомнит' : 'Напомнить'}</span>
+      </button>`
+      : '';
+
   return `
-    <div class="${cls.join(' ')}" data-card-idx="${idx}">
+    <div class="${cls.join(' ')}" data-day="${escapeHtml(day)}" data-card-idx="${idx}">
       <div class="card-top">
         ${timeBlock}
         <div class="card-tags">
@@ -113,6 +123,7 @@ const cardHtml = (lesson, idx, highlight) => {
       <div class="subject">${escapeHtml(lesson.subject || '—')}</div>
       <div class="row-info">${meta.join('')}</div>
       ${liveHtml}
+      ${remindHtml}
     </div>`;
 };
 
@@ -161,11 +172,13 @@ const heroHtml = (lessons, status) => {
   return '';
 };
 
-const dayBlockHtml = (day, items, isToday, _today) => {
+const dayBlockHtml = (day, items, isToday, _today, options = {}) => {
   const hl = highlightIndex(items);
   const status = dayStatus(items);
   const hero = heroHtml(items, status);
-  const cards = items.map((it, i) => cardHtml(it, i, hl)).join('');
+  const cards = items
+    .map((it, i) => cardHtml(it, day, i, hl, options.remind ? options.remind(it) : null))
+    .join('');
   return `
     <section class="day ${isToday ? 'is-today' : ''}" data-day="${escapeHtml(day)}" data-status="${status}">
       <header class="day-header">
@@ -176,9 +189,38 @@ const dayBlockHtml = (day, items, isToday, _today) => {
         <div class="day-count">${items.length} ${dayWord(items.length)}</div>
       </header>
       ${hero}
-      <div class="cards">${cards || '<div class="empty-day">Пар нет</div>'}</div>
+      <div class="cards">${cards || `<div class="empty-day">${escapeHtml(options.emptyText || 'Пар нет')}</div>`}</div>
     </section>`;
 };
+
+/**
+ * Компактная строка недели: время, предмет, аудитория/преподаватель.
+ * Тот же визуальный язык, но в два раза плотнее карточки дня.
+ */
+const weekRowHtml = (lesson, day) => `
+  <button type="button" class="wk-row" data-day="${escapeHtml(day)}">
+    <span class="wk-time">${escapeHtml(lesson.time || '—')}</span>
+    <span class="wk-body">
+      <span class="wk-subject">${escapeHtml(lesson.subject || '—')}</span>
+      ${[lesson.room, lesson.teacher].filter(Boolean).length ? `<span class="wk-meta">${escapeHtml([lesson.room, lesson.teacher].filter(Boolean).join(' · '))}</span>` : ''}
+    </span>
+    <span class="wk-arrow" aria-hidden="true">→</span>
+  </button>`;
+
+const weekPlanHtml = (plan) =>
+  plan
+    .map(
+      (entry) => `
+    <section class="wk-day ${entry.isToday ? 'is-today' : ''}" data-day="${escapeHtml(entry.day)}">
+      <header class="wk-head">
+        <span class="wk-day-name">${escapeHtml(entry.day)}</span>
+        ${entry.isToday ? '<span class="wk-badge">сегодня</span>' : ''}
+        <span class="wk-count">${entry.count} ${lessonWord(entry.count)}</span>
+      </header>
+      <div class="wk-rows">${entry.items.map((it) => weekRowHtml(it, entry.day)).join('')}</div>
+    </section>`
+    )
+    .join('');
 
 const emptyHtml = (title, sub) => `
   <div class="empty">
@@ -186,6 +228,37 @@ const emptyHtml = (title, sub) => `
     <h2>${escapeHtml(title)}</h2>
     <p>${escapeHtml(sub)}</p>
   </div>`;
+
+/**
+ * Пустой экран должен отвечать на вопрос, а не выглядеть поломкой:
+ * «расписания нет», «группа не выбрана», «на этот день пар нет» — это разные
+ * ситуации с разными подсказками.
+ */
+const EMPTY_COPY = {
+  'load-failed': [
+    'Не удалось загрузить расписание',
+    'Похоже, нет связи. Проверь интернет и нажми «Повторить» выше.',
+  ],
+  'no-schedule': [
+    'Расписание ещё не опубликовано',
+    'Как только колледж опубликует новую неделю, она появится здесь сама.',
+  ],
+  'no-group': ['Выбери свою группу', 'Один раз — дальше запомним.'],
+  'no-group-lessons': [
+    'Для этой группы пока нет пар',
+    'Проверь отделение или выбери другую группу — расписание берётся из файла.',
+  ],
+  'no-lessons-today': [
+    'На этот день пар нет',
+    'Посмотри неделю кнопкой «Неделя» или выбери другой день.',
+  ],
+  unknown: ['Ничего не найдено', 'Попробуйте изменить фильтры или поисковый запрос.'],
+};
+
+const emptyFor = (reason) => {
+  const [title, sub] = EMPTY_COPY[reason] || EMPTY_COPY.unknown;
+  return emptyHtml(title, sub);
+};
 
 /**
  * Виджет «Завтра» — показываем когда сегодня пар нет.
@@ -246,20 +319,38 @@ export function createScheduleView(container) {
   let onDayChange = () => {};
   /** @type {(t: string) => void} */
   let onRefresh = () => {};
+  /** @type {(lesson: any) => void} */
+  let onRemind = () => {};
+  /** @type {(day: string) => void} */
+  let onOpenDay = () => {};
   /** @type {string} */
   let activeDay = '';
   /** @type {any[]} */
   let lastLessons = [];
+  /** @type {Map<string, any[]>} */
+  let renderedByDay = new Map();
+  /** @type {any} */
+  let lastMeta = null;
   let isMobile = window.matchMedia('(max-width: 768px)').matches;
+  /** @type {(() => void) | null} */
+  let rerender = null;
+  /**
+   * Поворот экрана и изменение ширины окна меняют `isMobile`, а значит и всю
+   * разметку: на мобильном нужны пилюли дней и карусель, на десктопе — нет.
+   * Поэтому пересчёт обязан перерисовать список, иначе пилюли появляются
+   * только после смены дня, а на десктопе не появляются вовсе.
+   */
+  const syncViewport = () => {
+    const mobile = window.matchMedia('(max-width: 768px)').matches;
+    if (mobile === isMobile) return;
+    isMobile = mobile;
+    rerender?.();
+  };
   if (typeof ResizeObserver !== 'undefined') {
-    const ro = new ResizeObserver(() => {
-      isMobile = window.matchMedia('(max-width: 768px)').matches;
-    });
+    const ro = new ResizeObserver(syncViewport);
     ro.observe(document.documentElement);
   } else {
-    window.addEventListener('resize', () => {
-      isMobile = window.matchMedia('(max-width: 768px)').matches;
-    });
+    window.addEventListener('resize', syncViewport);
   }
 
   // Live-таймер — обновляет только countdown-элементы и прогресс-бар is-now.
@@ -276,11 +367,12 @@ export function createScheduleView(container) {
       // В hero "между" — если delta < 0 значит пора пересчитать highlight, перерисуем
       if (delta < -1000) el.classList.add('is-stale');
     });
-    // Прогресс-бар is-now
+    // Прогресс-бар is-now. Индекс карточки относится к её дню, а не ко всему
+    // списку, поэтому ищем занятие через renderedByDay.
     const isNow = container.querySelector('.card.is-now');
     if (isNow) {
-      const idx = Number(isNow.dataset.cardIdx);
-      const lesson = lastLessons[idx];
+      const items = renderedByDay.get(isNow.dataset.day) || [];
+      const lesson = items[Number(isNow.dataset.cardIdx)];
       if (lesson) {
         const fill = isNow.querySelector('.card-live-fill');
         if (fill) fill.style.width = cardProgress(lesson) + '%';
@@ -336,19 +428,34 @@ export function createScheduleView(container) {
     document.addEventListener('touchend', onTouchEnd, { passive: true });
   };
 
+  /**
+   * @param {any[]} lessons все занятия выбранной группы (без фильтра по дню)
+   * @param {{
+   *   today: string,
+   *   mode?: 'day'|'week',
+   *   plan?: {day: string, items: any[], count: number, isToday: boolean}[],
+   *   selectedDay?: string,
+   *   emptyReason?: string,
+   *   canRemind?: boolean,
+   *   isReminded?: (lesson: any) => boolean,
+   * }} meta
+   */
   const render = (lessons, meta) => {
-    // Сохраняем для live-таймера и для "завтра"
+    // Сохраняем для live-таймера, для "завтра" и для перерисовки при смене
+    // вьюпорта: последняя должна повторить ровно этот вызов.
     lastLessons = lessons;
-    void meta.today;
+    lastMeta = meta;
+    rerender = () => {
+      if (!lastMeta) return;
+      render(lastLessons, lastMeta);
+    };
+    const today = meta.today || '';
 
     if (!lessons.length) {
-      // Если есть данные в lessons, но фильтр всё отрезал — показываем пусто.
-      // Иначе: empty state с "завтра" (если есть state.sheets)
-      container.innerHTML = emptyHtml(
-        'Ничего не найдено',
-        'Попробуйте изменить фильтры или поисковый запрос.'
-      );
+      // Ничего не показать нельзя молча: объясняем, что именно пусто.
+      container.innerHTML = emptyFor(meta.emptyReason || 'unknown');
       activeDay = '';
+      renderedByDay = new Map();
       return;
     }
 
@@ -361,6 +468,9 @@ export function createScheduleView(container) {
     // Парсим время заранее для live-таймера
     for (const list of byDay.values()) ensureParsed(list);
 
+    const itemsOf = (day) =>
+      (byDay.get(day) || []).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+
     const ordered = [...byDay.keys()].sort((a, b) => {
       const ia = DAY_ORDER.indexOf(a),
         ib = DAY_ORDER.indexOf(b);
@@ -370,51 +480,72 @@ export function createScheduleView(container) {
       return ia - ib;
     });
 
-    if (!ordered.includes(activeDay)) {
-      activeDay = meta.today && ordered.includes(meta.today) ? meta.today : ordered[0] || '';
+    const remind = meta.canRemind
+      ? (lesson) => ({ enabled: true, on: Boolean(meta.isReminded && meta.isReminded(lesson)) })
+      : null;
+
+    renderedByDay = new Map(ordered.map((d) => [d, itemsOf(d)]));
+
+    // --- Режим «Неделя»: все дни списком, одинаковый стиль, но компактнее. ---
+    if (meta.mode === 'week') {
+      const plan = (meta.plan || []).filter((entry) => byDay.has(entry.day));
+      activeDay = '';
+      container.innerHTML = plan.length
+        ? weekPlanHtml(plan)
+        : emptyFor(meta.emptyReason || 'unknown');
+      container.querySelectorAll('.wk-row').forEach((row) => {
+        row.addEventListener('click', () => onOpenDay(row.dataset.day));
+      });
+      return;
     }
 
-    if (!isMobile) {
-      activeDay = '';
-      container.innerHTML = ordered
-        .map((d) => {
-          const items = byDay
-            .get(d)
-            .slice()
-            .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-          return dayBlockHtml(d, items, d === meta.today, meta.today);
-        })
-        .join('');
-    } else {
-      // Сегодня — особый случай: если сегодня пар нет (или пусто в текущей выборке),
-      // показываем "завтра" поверх пустого дня.
-      const todayName = meta.today;
-      const todayItems = todayName ? byDay.get(todayName) || [] : [];
-      const todayIsEmpty = !todayItems.length;
+    // --- Режим «День» (по умолчанию). ---
+    // Явно выбранный день wins; иначе — сегодня, иначе первый день с парами.
+    if (meta.selectedDay) {
+      activeDay = meta.selectedDay;
+    } else if (!ordered.includes(activeDay)) {
+      activeDay = today && ordered.includes(today) ? today : ordered[0] || '';
+    }
+    const dayList = ordered.includes(activeDay) ? ordered : [activeDay, ...ordered].filter(Boolean);
+    const dayOptions = { remind, emptyText: 'На этот день пар нет' };
 
-      // Если сегодня пустой И это "первый" показ — добавляем tomorrow widget
-      const tomorrowWidget = todayIsEmpty ? tomorrowWidgetHtml(lessons, todayName) : '';
+    if (!isMobile) {
+      container.innerHTML = dayBlockHtml(
+        activeDay,
+        itemsOf(activeDay),
+        activeDay === today,
+        today,
+        dayOptions
+      );
+    } else {
+      // Сегодня — особый случай: если сегодня пар нет, показываем "завтра"
+      // поверх пустого дня.
+      const todayItems = today ? byDay.get(today) || [] : [];
+      const todayIsEmpty = !todayItems.length;
+      const tomorrowWidget =
+        todayIsEmpty && activeDay === today ? tomorrowWidgetHtml(lessons, today) : '';
 
       const pillsHtml = `<div class="day-pills" role="tablist">
         ${ordered
           .map((d) => {
             const isActive = d === activeDay;
-            return `<button type="button" class="day-pill ${isActive ? 'active' : ''} ${d === meta.today ? 'is-today' : ''}" data-day="${escapeHtml(d)}">
+            return `<button type="button" class="day-pill ${isActive ? 'active' : ''} ${d === today ? 'is-today' : ''}" data-day="${escapeHtml(d)}">
             ${DAY_SHORT[d] || escapeHtml(d)}
           </button>`;
           })
           .join('')}
       </div>`;
 
-      const slidesHtml = ordered
+      const slidesHtml = dayList
         .map((d) => {
-          const items = byDay
-            .get(d)
-            .slice()
-            .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
           const isActive = d === activeDay;
-          const isTodayDay = d === meta.today;
-          return `<div class="day-slide ${isActive ? 'active' : ''}" data-day="${escapeHtml(d)}">${dayBlockHtml(d, items, isTodayDay, meta.today)}</div>`;
+          return `<div class="day-slide ${isActive ? 'active' : ''}" data-day="${escapeHtml(d)}">${dayBlockHtml(
+            d,
+            itemsOf(d),
+            d === today,
+            today,
+            dayOptions
+          )}</div>`;
         })
         .join('');
 
@@ -437,8 +568,8 @@ export function createScheduleView(container) {
     // is-now card countdown: target = end-time сегодня (миллисекунды)
     const isNow = container.querySelector('.card.is-now');
     if (isNow) {
-      const idx = Number(isNow.dataset.cardIdx);
-      const lesson = lastLessons[idx];
+      const items = renderedByDay.get(isNow.dataset.day) || [];
+      const lesson = items[Number(isNow.dataset.cardIdx)];
       if (lesson && lesson._parsed && lesson._parsed.end) {
         const target = todayTimeToMs(lesson._parsed.end);
         const cd = isNow.querySelector('.countdown');
@@ -558,12 +689,30 @@ export function createScheduleView(container) {
     });
   };
 
+  /**
+   * Тап по «Напомнить» на карточке. Делегирование, а не обработчик на каждой
+   * кнопке: карточки перерисовываются на каждое изменение состояния.
+   */
+  const attachRemindTap = () => {
+    container.addEventListener('click', (e) => {
+      const button = e.target.closest('.card-remind');
+      if (!button) return;
+      // Кнопка не должна дёргать карточку и не должна вести себя как её тап.
+      e.stopPropagation();
+      e.preventDefault();
+      const items = renderedByDay.get(button.dataset.remindDay) || [];
+      const lesson = items[Number(button.dataset.remindIdx)];
+      if (lesson) onRemind(lesson);
+    });
+  };
+
   return {
     render,
     start() {
       start();
       ensurePull();
       attachCardVibrate();
+      attachRemindTap();
     },
     stop,
     showDay,
@@ -572,6 +721,12 @@ export function createScheduleView(container) {
     },
     setOnRefresh: (cb) => {
       onRefresh = cb;
+    },
+    setOnRemind: (cb) => {
+      onRemind = cb;
+    },
+    setOnOpenDay: (cb) => {
+      onOpenDay = cb;
     },
   };
 }
