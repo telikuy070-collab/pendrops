@@ -1,27 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#6ea8ff"/>
-      <stop offset="100%" stop-color="#8b5cf6"/>
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" rx="96" fill="url(#g)"/>
-  <rect x="80" y="120" width="352" height="320" rx="24" fill="#0f172a"/>
-  <rect x="80" y="120" width="352" height="70" rx="24" fill="#1c2a5e"/>
-  <circle cx="160" cy="100" r="14" fill="#fff"/>
-  <circle cx="352" cy="100" r="14" fill="#fff"/>
-  <rect x="80" y="160" width="352" height="6" fill="#1c2a5e"/>
-  <g fill="#6ea8ff">
-    <rect x="110" y="220" width="80" height="20" rx="6"/>
-    <rect x="210" y="220" width="80" height="20" rx="6" fill="#8b5cf6"/>
-    <rect x="310" y="220" width="80" height="20" rx="6"/>
-    <rect x="110" y="260" width="80" height="20" rx="6" fill="#8b5cf6"/>
-    <rect x="210" y="260" width="80" height="20" rx="6"/>
-    <rect x="110" y="320" width="80" height="20" rx="6"/>
-    <rect x="210" y="320" width="80" height="20" rx="6" fill="#34d399"/>
-    <rect x="310" y="320" width="80" height="20" rx="6"/>
-    <rect x="110" y="360" width="80" height="20" rx="6"/>
-    <rect x="210" y="360" width="80" height="20" rx="6"/>
-    <rect x="310" y="360" width="80" height="20" rx="6" fill="#8b5cf6"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PenDrops">
+  <rect x="0" y="0" width="512" height="512" fill="#0f172a" />
+  <rect x="124" y="136" width="264" height="248" rx="48" fill="#f8fafc" />
+  <rect x="124" y="136" width="264" height="76" rx="48" fill="#a78bfa" />
+  <rect x="124" y="164" width="264" height="48" fill="#a78bfa" />
+  <rect x="124" y="212" width="264" height="172" fill="#f8fafc" />
+  <rect x="180" y="108" width="32" height="64" rx="16" fill="#e9d5ff" />
+  <rect x="300" y="108" width="32" height="64" rx="16" fill="#e9d5ff" />
+  <rect x="158" y="252" width="52" height="34" rx="12" fill="#a78bfa" />
+  <rect x="230" y="252" width="52" height="34" rx="12" fill="#cbd5e1" />
+  <rect x="302" y="252" width="52" height="34" rx="12" fill="#cbd5e1" />
+  <rect x="158" y="310" width="52" height="34" rx="12" fill="#cbd5e1" />
+  <rect x="230" y="310" width="52" height="34" rx="12" fill="#cbd5e1" />
+  <rect x="302" y="310" width="52" height="34" rx="12" fill="#f0abfc" />
 </svg>

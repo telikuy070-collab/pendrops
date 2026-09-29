@@ -23,6 +23,7 @@
     "test:edge": "node tests/edge-cases.js",
     "test:store": "node tests/store-audit.js",
     "test:security": "node tests/security-audit.mjs",
+    "icons": "node scripts/generate-icons.mjs",
     "verify:data": "node scripts/verify-data.mjs",
     "verify:oracle": "vite-node --config vitest.config.ts scripts/oracle-supabase.ts",
     "typecheck": "tsc --noEmit",

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f172a" />
+    <title>PenDrops — файл получен</title>
+    <!--
+      Share/file-import landing page.
+
+      The Service Worker owns the transfer: it intercepts the multipart POST
+      that the Android share sheet sends to this URL, stores the workbook in
+      Cache Storage under `pendrops-shared` / `__shared_schedule__` and answers
+      with a 303 back to this page (see public/sw.js). This page therefore
+      never sees the file itself — it only hands the user over to the app,
+      which reads the stored workbook and prefills the admin dialog.
+
+      Styles are inlined on purpose: this is a static page copied verbatim into
+      dist/ by Vite and never goes through the bundler, so it cannot reach the
+      hashed `assets/main-*.css` bundle.
+    -->
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+        background: #000;
+        color: #fff;
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', 'SF Pro Display', Inter, Roboto,
+          'Helvetica Neue', Arial, sans-serif;
+      }
+      .card {
+        max-width: 340px;
+        text-align: center;
+      }
+      .spinner {
+        width: 48px;
+        height: 48px;
+        margin: 0 auto 18px;
+        border: 4px solid rgba(255, 255, 255, 0.2);
+        border-top-color: #a78bfa;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        font-weight: 700;
+      }
+      p {
+        margin: 0;
+        color: #c4c8e0;
+        font-size: 14px;
+      }
+      a {
+        display: inline-block;
+        margin-top: 20px;
+        padding: 14px 22px;
+        min-height: 56px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #a78bfa, #f0abfc);
+        color: #1a0a2e;
+        font-weight: 700;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="spinner"></div>
+      <h1>Файл получен</h1>
+      <p>Открываем PenDrops — останется ввести PIN, чтобы опубликовать расписание.</p>
+      <a id="continue" href="./index.html?shared=1&source=pwa-share">Перейти в расписание</a>
+    </div>
+    <script>
+      // Automatic hop. `location.replace` keeps the interop page out of the
+      // history so the Back gesture does not land the user here again.
+      // A blocked navigation (sandboxed frame, hardened browser) still leaves
+      // the visible link above as a working fallback.
+      location.replace('./index.html?shared=1&source=pwa-share');
+    </script>
+  </body>
+</html>

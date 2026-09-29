@@ -1,229 +1,289 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#0f172a" />
-  <meta name="description" content="PenDrops — расписание мед. колледжа" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="PenDrops" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="format-detection" content="telephone=no" />
-  <meta name="referrer" content="strict-origin-when-cross-origin" />
-  <!-- Content Security Policy (meta tag fallback for GitHub Pages) -->
-  <!-- NOTE: frame-ancestors is ignored in <meta> CSP — set via HTTP headers (nginx) or _headers file -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://bnzcfhtmzvxxiwfkdryn.supabase.co wss://bnzcfhtmzvxxiwfkdryn.supabase.co; font-src 'self';">
-  <!-- Security headers via meta tags (GitHub Pages doesn't support HTTP headers) -->
-  <meta http-equiv="X-Content-Type-Options" content="nosniff">
-  <!-- X-Frame-Options removed: set via HTTP header (Nginx) or CSP frame-ancestors (in _headers) instead -->
-  <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
-  <meta http-equiv="Permissions-Policy" content="accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()">
-  <title>PenDrops — Расписание</title>
-  <link rel="manifest" href="manifest.json" />
-  <link rel="icon" type="image/svg+xml" href="assets/icons/icon.svg" />
-  <link rel="apple-touch-icon" href="assets/icons/icon-192.png" />
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="logo">💧</span>
-      <h1>PenDrops</h1>
-    </div>
-    <div class="actions">
-      <button id="installBtn" class="btn ghost hidden" title="Установить как приложение" aria-label="Установить PWA">📲</button>
-      <button id="settingsBtn" class="btn ghost" aria-label="Настройки">⚙</button>
-    </div>
-  </header>
-
-  <section id="quickPick" class="quick-pick hidden">
-    <div class="qp-bar">
-      <button id="sheetBtn" class="qp-pill" data-empty="true">
-        <span class="qp-pill-label">Отделение</span>
-        <span class="qp-pill-value" id="sheetValue">—</span>
-        <span class="qp-pill-caret">▾</span>
-      </button>
-      <button id="groupBtn" class="qp-pill" data-empty="true">
-        <span class="qp-pill-label">Группа</span>
-        <span class="qp-pill-value" id="groupValue">—</span>
-        <span class="qp-pill-caret">▾</span>
-      </button>
-      <button id="subgroupBtn" class="qp-pill" data-empty="true">
-        <span class="qp-pill-label">Подгруппа</span>
-        <span class="qp-pill-value" id="subgroupValue">Все</span>
-        <span class="qp-pill-caret">▾</span>
-      </button>
-    </div>
-  </section>
-
-   <main id="scheduleContainer" class="schedule">
-     <error-boundary id="scheduleError" message="Расписание недоступно">
-       <div class="loading" id="loadingState">
-         <div class="spinner"></div>
-         <p>Загружаем расписание...</p>
-       </div>
-     </error-boundary>
-   </main>
-
-  <div id="toast" class="toast"></div>
-
-  <!-- Settings modal -->
-  <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-    <div class="modal-backdrop"></div>
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2 id="modalTitle">Настройки</h2>
-        <button class="modal-close" id="closeModal" aria-label="Закрыть">✕</button>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="description" content="PenDrops — расписание мед. колледжа" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="PenDrops" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <!-- Content Security Policy (meta tag fallback for GitHub Pages) -->
+    <!-- NOTE: frame-ancestors is ignored in <meta> CSP — set via HTTP headers (nginx) or _headers file -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://bnzcfhtmzvxxiwfkdryn.supabase.co wss://bnzcfhtmzvxxiwfkdryn.supabase.co; font-src 'self';"
+    />
+    <!-- Security headers via meta tags (GitHub Pages doesn't support HTTP headers) -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <!-- X-Frame-Options removed: set via HTTP header (Nginx) or CSP frame-ancestors (in _headers) instead -->
+    <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin" />
+    <meta
+      http-equiv="Permissions-Policy"
+      content="accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+    />
+    <title>PenDrops — Расписание</title>
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">💧</span>
+        <h1>PenDrops</h1>
       </div>
-
-      <div class="modal-section" id="scheduleInfo" hidden>
-        <h3>Расписание</h3>
-        <div class="modal-hint" id="scheduleInfoText">—</div>
+      <div class="actions">
+        <button id="settingsBtn" class="btn ghost" aria-label="Настройки">⚙</button>
       </div>
+    </header>
 
-      <details class="more-filters" id="advancedFilters" open>
-        <summary>Дополнительные фильтры</summary>
-        <div class="secondary-row">
-          <div class="field">
-            <label>День</label>
-            <select id="dayFilter"><option value="">Все</option></select>
+    <section id="quickPick" class="quick-pick hidden">
+      <div class="qp-bar">
+        <button id="sheetBtn" class="qp-pill" data-empty="true">
+          <span class="qp-pill-label">Отделение</span>
+          <span class="qp-pill-value" id="sheetValue">—</span>
+          <span class="qp-pill-caret">▾</span>
+        </button>
+        <button id="groupBtn" class="qp-pill" data-empty="true">
+          <span class="qp-pill-label">Группа</span>
+          <span class="qp-pill-value" id="groupValue">—</span>
+          <span class="qp-pill-caret">▾</span>
+        </button>
+        <button id="subgroupBtn" class="qp-pill" data-empty="true">
+          <span class="qp-pill-label">Подгруппа</span>
+          <span class="qp-pill-value" id="subgroupValue">Все</span>
+          <span class="qp-pill-caret">▾</span>
+        </button>
+      </div>
+    </section>
+
+    <!--
+    Install / add-to-home-screen panel. It is hidden by default and only
+    revealed by src/presentation/pwa/install.ts when the browser reports that
+    PenDrops is not installed yet (Chromium `beforeinstallprompt`, or iOS, where
+    the instruction replaces the button because Safari has no prompt API).
+  -->
+    <section id="installPanel" class="install-panel hidden" aria-live="polite">
+      <div class="install-panel-head">
+        <span class="install-panel-icon" aria-hidden="true">📲</span>
+        <div class="install-panel-text">
+          <div class="install-panel-title" id="installPanelTitle">Установить на телефон</div>
+          <div class="install-panel-sub" id="installPanelSub">
+            Быстрый запуск с иконки и работа без интернета
           </div>
-          <div class="field field-grow">
-            <label>Поиск</label>
-            <input id="searchInput" type="search" placeholder="Предмет, преподаватель..." />
-          </div>
-          <button id="resetBtn" class="btn ghost">Сброс</button>
         </div>
-      </details>
-    </div>
-  </div>
-
-  <!-- Sheet picker modal -->
-  <div id="sheetModal" class="modal hidden" role="dialog" aria-modal="true">
-    <div class="modal-backdrop"></div>
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>Выберите отделение</h2>
-        <button class="modal-close" data-close="sheet" aria-label="Закрыть">✕</button>
       </div>
-      <div class="picker-list" id="sheetList"></div>
+      <div class="install-panel-actions">
+        <button id="installBtn" class="btn primary block hidden">Установить на телефон</button>
+        <button id="installDismiss" class="btn ghost small">Не сейчас</button>
+      </div>
+    </section>
+
+    <main id="scheduleContainer" class="schedule">
+      <error-boundary id="scheduleError" message="Расписание недоступно">
+        <div class="loading" id="loadingState">
+          <div class="spinner"></div>
+          <p>Загружаем расписание...</p>
+        </div>
+      </error-boundary>
+    </main>
+
+    <!--
+    Permanent link to the college LMS. Pinned to the bottom of the viewport so
+    it stays reachable with a thumb on a phone: the schedule itself scrolls for
+    hundreds of pixels, so a link inside the flow would be unreachable without
+    deliberate scrolling. `.schedule` already reserves 100px of bottom margin, so
+    the dock never covers the last card.
+  -->
+    <nav class="avn-bar" aria-label="Переход в АВН">
+      <a
+        class="avn-link"
+        href="https://avn.kumu.kg/lms/login"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <span class="avn-link-icon" aria-hidden="true">🎓</span>
+        <span class="avn-link-body">
+          <span class="avn-link-title">Перейти в АВН</span>
+          <span class="avn-link-host">avn.kumu.kg</span>
+        </span>
+        <span class="avn-link-arrow" aria-hidden="true">→</span>
+      </a>
+    </nav>
+
+    <div id="toast" class="toast"></div>
+
+    <!-- Settings modal -->
+    <div
+      id="settingsModal"
+      class="modal hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modalTitle"
+    >
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="modalTitle">Настройки</h2>
+          <button class="modal-close" id="closeModal" aria-label="Закрыть">✕</button>
+        </div>
+
+        <div class="modal-section" id="scheduleInfo" hidden>
+          <h3>Расписание</h3>
+          <div class="modal-hint" id="scheduleInfoText">—</div>
+        </div>
+
+        <details class="more-filters" id="advancedFilters" open>
+          <summary>Дополнительные фильтры</summary>
+          <div class="secondary-row">
+            <div class="field">
+              <label>День</label>
+              <select id="dayFilter">
+                <option value="">Все</option>
+              </select>
+            </div>
+            <div class="field field-grow">
+              <label>Поиск</label>
+              <input id="searchInput" type="search" placeholder="Предмет, преподаватель..." />
+            </div>
+            <button id="resetBtn" class="btn ghost">Сброс</button>
+          </div>
+        </details>
+      </div>
     </div>
-  </div>
 
-   <!-- Group picker modal -->
-   <div id="groupModal" class="modal hidden" role="dialog" aria-modal="true">
-     <div class="modal-backdrop"></div>
-     <div class="modal-content">
-       <div class="modal-header">
-         <h2>Выберите группу</h2>
-         <button class="modal-close" data-close="group" aria-label="Закрыть">✕</button>
-       </div>
-       <div class="picker-list" id="groupList"></div>
-     </div>
+    <!-- Sheet picker modal -->
+    <div id="sheetModal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Выберите отделение</h2>
+          <button class="modal-close" data-close="sheet" aria-label="Закрыть">✕</button>
+        </div>
+        <div class="picker-list" id="sheetList"></div>
+      </div>
     </div>
 
-   <!-- Subgroup picker modal -->
-   <div id="subgroupModal" class="modal hidden" role="dialog" aria-modal="true">
-     <div class="modal-backdrop"></div>
-     <div class="modal-content">
-       <div class="modal-header">
-         <h2>Выберите подгруппу</h2>
-         <button class="modal-close" data-close="subgroup" aria-label="Закрыть">✕</button>
-       </div>
-       <div class="picker-list" id="subgroupList"></div>
-     </div>
+    <!-- Group picker modal -->
+    <div id="groupModal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Выберите группу</h2>
+          <button class="modal-close" data-close="group" aria-label="Закрыть">✕</button>
+        </div>
+        <div class="picker-list" id="groupList"></div>
+      </div>
     </div>
 
-   <!-- Inline templates for the template engine -->
-   <template id="template-card" hidden>
-     <div class="card" data-card-idx="{{idx}}">
-       <div class="card-top">
-         <span class="time">🕒 {{time}}</span>
-         <div class="card-tags">
-           <span class="exam-badge" data-if="isExam">📝 Экзамен</span>
-           <span class="type-pill {{type}}">{{tpLabel}}</span>
-           <span class="state-pill {{stateClass}}" data-if="stateText">{{stateText}}</span>
-         </div>
-       </div>
-       <div class="subject">{{subject}}</div>
-       <div class="row-info">
-         <span class="chip chip-group" data-if="group"><b>Группа:</b> {{group}}<sup data-if="subgroup">({{subgroup}})</sup></span>
-         <span class="chip chip-teacher" data-if="teacher"><b>Преподаватель:</b> {{teacher}}</span>
-         <span class="chip chip-room" data-if="room"><b>Аудитория:</b> {{room}}</span>
-       </div>
-       <div class="card-live" data-if="isNow">
-         <div class="card-live-bar"><div class="card-live-fill"></div></div>
-         <div class="card-live-text">Осталось <b class="countdown">—</b></div>
-       </div>
-     </div>
-   </template>
+    <!-- Subgroup picker modal -->
+    <div id="subgroupModal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Выберите подгруппу</h2>
+          <button class="modal-close" data-close="subgroup" aria-label="Закрыть">✕</button>
+        </div>
+        <div class="picker-list" id="subgroupList"></div>
+      </div>
+    </div>
 
-   <template id="template-day" hidden>
-     <section class="day {{dayClass}}" data-day="{{day}}" data-status="{{status}}">
-       <header class="day-header">
-         <div class="day-title-block">
-           <div class="day-title">{{day}}</div>
-           <div class="day-badge" data-if="isToday">Сегодня</div>
-         </div>
-         <div class="day-count">{{count}} {{dayWord}}</div>
-       </header>
-       {{heroHTML}}
-       <div class="cards">{{cardsHTML}}</div>
-     </section>
-   </template>
+    <!-- Inline templates for the template engine -->
+    <template id="template-card" hidden>
+      <div class="card" data-card-idx="{{idx}}">
+        <div class="card-top">
+          <span class="time">🕒 {{time}}</span>
+          <div class="card-tags">
+            <span class="exam-badge" data-if="isExam">📝 Экзамен</span>
+            <span class="type-pill {{type}}">{{tpLabel}}</span>
+            <span class="state-pill {{stateClass}}" data-if="stateText">{{stateText}}</span>
+          </div>
+        </div>
+        <div class="subject">{{subject}}</div>
+        <div class="row-info">
+          <span class="chip chip-group" data-if="group"
+            ><b>Группа:</b> {{group}}<sup data-if="subgroup">({{subgroup}})</sup></span
+          >
+          <span class="chip chip-teacher" data-if="teacher"><b>Преподаватель:</b> {{teacher}}</span>
+          <span class="chip chip-room" data-if="room"><b>Аудитория:</b> {{room}}</span>
+        </div>
+        <div class="card-live" data-if="isNow">
+          <div class="card-live-bar"><div class="card-live-fill"></div></div>
+          <div class="card-live-text">Осталось <b class="countdown">—</b></div>
+        </div>
+      </div>
+    </template>
 
-   <template id="template-hero-break" hidden>
-     <div class="hero hero-break">
-       <div class="hero-icon">⏳</div>
-       <div class="hero-body">
-         <div class="hero-title">Перемена</div>
-         <div class="hero-sub">Дальше: <b>{{nextSubject}}</b> в <b>{{nextTime}}</b></div>
-       </div>
-       <div class="hero-countdown countdown">—</div>
-     </div>
-   </template>
+    <template id="template-day" hidden>
+      <section class="day {{dayClass}}" data-day="{{day}}" data-status="{{status}}">
+        <header class="day-header">
+          <div class="day-title-block">
+            <div class="day-title">{{day}}</div>
+            <div class="day-badge" data-if="isToday">Сегодня</div>
+          </div>
+          <div class="day-count">{{count}} {{dayWord}}</div>
+        </header>
+        {{heroHTML}}
+        <div class="cards">{{cardsHTML}}</div>
+      </section>
+    </template>
 
-   <template id="template-hero-before" hidden>
-     <div class="hero hero-before">
-       <div class="hero-icon">🕐</div>
-       <div class="hero-body">
-         <div class="hero-title">Первая пара через <span class="countdown">—</span></div>
-         <div class="hero-sub"><b>{{subject}}</b> в <b>{{time}}</b></div>
-       </div>
-     </div>
-   </template>
+    <template id="template-hero-break" hidden>
+      <div class="hero hero-break">
+        <div class="hero-icon">⏳</div>
+        <div class="hero-body">
+          <div class="hero-title">Перемена</div>
+          <div class="hero-sub">Дальше: <b>{{nextSubject}}</b> в <b>{{nextTime}}</b></div>
+        </div>
+        <div class="hero-countdown countdown">—</div>
+      </div>
+    </template>
 
-   <template id="template-hero-after" hidden>
-     <div class="hero hero-after">
-       <div class="hero-icon">🎉</div>
-       <div class="hero-body">
-         <div class="hero-title">Пары кончились</div>
-         <div class="hero-sub">Отдыхай</div>
-       </div>
-     </div>
-   </template>
+    <template id="template-hero-before" hidden>
+      <div class="hero hero-before">
+        <div class="hero-icon">🕐</div>
+        <div class="hero-body">
+          <div class="hero-title">Первая пара через <span class="countdown">—</span></div>
+          <div class="hero-sub"><b>{{subject}}</b> в <b>{{time}}</b></div>
+        </div>
+      </div>
+    </template>
 
-   <template id="template-empty" hidden>
-     <div class="empty">
-       <div class="empty-illu">{{icon}}</div>
-       <h2>{{title}}</h2>
-       <p>{{sub}}</p>
-     </div>
-   </template>
+    <template id="template-hero-after" hidden>
+      <div class="hero hero-after">
+        <div class="hero-icon">🎉</div>
+        <div class="hero-body">
+          <div class="hero-title">Пары кончились</div>
+          <div class="hero-sub">Отдыхай</div>
+        </div>
+      </div>
+    </template>
 
-   <template id="template-tomorrow" hidden>
-     <div class="tomorrow-widget">
-       <div class="tw-icon">📅</div>
-       <div class="tw-body">
-         <div class="tw-title">{{day}}</div>
-         <div class="tw-sub">{{count}} {{lessonWord}} · первая в <b>{{firstTime}}</b></div>
-         <div class="tw-first">{{firstSubject}}</div>
-       </div>
-     </div>
-   </template>
+    <template id="template-empty" hidden>
+      <div class="empty">
+        <div class="empty-illu">{{icon}}</div>
+        <h2>{{title}}</h2>
+        <p>{{sub}}</p>
+      </div>
+    </template>
 
-<script type="module" src="src/view/errorBoundary.js"></script>
+    <template id="template-tomorrow" hidden>
+      <div class="tomorrow-widget">
+        <div class="tw-icon">📅</div>
+        <div class="tw-body">
+          <div class="tw-title">{{day}}</div>
+          <div class="tw-sub">{{count}} {{lessonWord}} · первая в <b>{{firstTime}}</b></div>
+          <div class="tw-first">{{firstSubject}}</div>
+        </div>
+      </div>
+    </template>
+
+    <script type="module" src="src/view/errorBoundary.js"></script>
     <script type="module" src="src/main.ts"></script>
- </body>
+  </body>
 </html>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import {
@@ -116,6 +116,76 @@ describe('release manifest', () => {
     const description = describeScheduleSnapshot(read);
     expect(description).toMatch(/^schedule snapshot: version=/);
     expect(description).toContain('sha256=');
+  });
+});
+
+describe('web app manifest packaging', () => {
+  const manifest = JSON.parse(readFileSync(resolve(root, 'public/manifest.json'), 'utf8'));
+  const indexHtml = readFileSync(resolve(root, 'index.html'), 'utf8');
+
+  it('ships every icon the manifest declares', () => {
+    // A manifest icon that 404s silently removes the app from the install
+    // prompt on Android, and nothing else in the build reports it.
+    expect(manifest.icons.length).toBeGreaterThan(0);
+    for (const icon of manifest.icons) {
+      expect(existsSync(resolve(root, 'public', icon.src))).toBe(true);
+    }
+  });
+
+  it('declares a 192px and a 512px raster icon as maskable', () => {
+    const png = manifest.icons.filter((icon) => icon.type === 'image/png');
+    expect(png.map((icon) => icon.sizes).sort()).toEqual(['192x192', '512x512']);
+    for (const icon of png) {
+      expect(icon.purpose.split(/\s+/)).toContain('maskable');
+    }
+  });
+
+  it('ships the share target the manifest advertises', () => {
+    // The share target is a POST-only endpoint: without a real file the Android
+    // share sheet offers a feature that 404s.
+    const action = manifest.share_target.action;
+    expect(action.startsWith('./')).toBe(true);
+    expect(existsSync(resolve(root, 'public', action))).toBe(true);
+    // Must match the path the worker intercepts, see tests/pwa.
+    expect(action).toBe('./share-handler.html');
+  });
+
+  it('points every head link at a file that exists in the output', () => {
+    // `link[href]` is rewritten by the bundler, so a path that also exists at
+    // the repository root gets bundled into assets/ and the relative URLs
+    // inside the manifest then resolve to 404s.
+    for (const [, href] of indexHtml.matchAll(/<link[^>]+href="([^"]+)"/g)) {
+      if (!/\.(png|svg|json)$/.test(href)) continue; // stylesheet lives outside public/
+      expect(href.startsWith('/')).toBe(true);
+      expect(existsSync(resolve(root, 'public', href.replace(/^\//, '')))).toBe(true);
+    }
+  });
+
+  it('keeps every manifest URL inside the declared scope', () => {
+    const base = new URL(manifest.start_url, 'https://host/pendrops/');
+    const scope = new URL(manifest.scope, base);
+    const urls = [
+      manifest.start_url,
+      manifest.share_target.action,
+      ...manifest.shortcuts.map((s) => s.url),
+    ];
+    for (const url of urls) {
+      const resolved = new URL(url, base);
+      expect(resolved.href.startsWith(scope.href)).toBe(true);
+    }
+  });
+
+  it('offers a "Сегодня" shortcut that lands on the same day filter the app reads', () => {
+    const today = manifest.shortcuts.find(
+      (s) => s.shortcut_name === 'today' || s.short_name === 'Сегодня'
+    );
+    expect(today).toBeDefined();
+    expect(new URL(today.url, 'https://host/pendrops/').searchParams.get('day')).toBe('today');
+    expect(new URL(manifest.start_url, 'https://host/pendrops/').searchParams.get('day')).toBe(
+      'today'
+    );
+    // The app has to consume the flag, otherwise the shortcut opens the full week.
+    expect(readFileSync(resolve(root, 'src/main.ts'), 'utf8')).toContain("get('day') !== 'today'");
   });
 });
 

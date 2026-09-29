@@ -23,7 +23,14 @@ import { createScheduleView } from './view/scheduleView.js';
 import { createScheduleStatusBanner } from './view/scheduleStatus.js';
 import { createAdminView } from './view/adminView.js';
 import { initBrandGesture } from '@presentation/gestures/brandGesture';
+import { initInstallPrompt } from '@presentation/pwa/install';
+import {
+  clearSharedLaunchFlag,
+  isSharedLaunch,
+  takeSharedWorkbook,
+} from '@presentation/pwa/sharedFile';
 import { escapeHtml } from './text.js';
+import { DAY_ORDER } from './constants.js';
 import { effect } from '@presentation/stores/signals';
 import type { PreferencesService as PrefsServiceType } from '@core/application/services';
 import { reportError } from './view/errorBoundary.js';
@@ -135,6 +142,9 @@ export async function bootstrap(): Promise<void> {
     actions.setPreference('currentGroup', prefs.currentGroup);
     actions.setPreference('activeSubgroup', prefs.activeSubgroup);
 
+    // PWA shortcut / start_url: open straight on today's weekday.
+    applyLaunchFilters();
+
     // Non-blocking first render: the cached snapshot paints immediately while
     // the authoritative load runs. The heavy XLS parser is not part of this path.
     const cached = await scheduleService.loadCached();
@@ -214,6 +224,8 @@ export async function bootstrap(): Promise<void> {
     const subgroupValue = document.getElementById('subgroupValue');
     const quickPick = document.getElementById('quickPick');
 
+    populateDayFilter();
+
     // The schedule view owns pull-to-refresh; main.ts must not attach a second
     // handler, otherwise one gesture triggers two refreshes.
     scheduleView.setOnRefresh(() => handlePullRefresh(scheduleService));
@@ -256,6 +268,10 @@ export async function bootstrap(): Promise<void> {
     // Initialize brand gesture (10-tap for admin)
     initBrandGesture({ authService, adminView, toast });
 
+    // A workbook shared into the PWA: take it over and prefill the admin dialog
+    // so publishing is one PIN away.
+    void adoptSharedWorkbook(adminView, toast);
+
     // Bind UI events
     bindEvents(scheduleService, prefsService, authService, adminService);
 
@@ -265,6 +281,20 @@ export async function bootstrap(): Promise<void> {
   function syncDayFilter(day: string): void {
     const dayFilter = document.getElementById('dayFilter') as HTMLSelectElement | null;
     if (dayFilter) dayFilter.value = day;
+  }
+
+  /**
+   * Launch deep links.
+   *
+   * `?day=today` is carried by the manifest `start_url` and by the "Сегодня"
+   * app shortcut, so a long press on the home-screen icon lands on today's
+   * weekday without the user picking anything first.
+   */
+  function applyLaunchFilters(): void {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('day') !== 'today') return;
+    actions.setFilter('day', todayName.value);
+    syncDayFilter(todayName.value);
   }
 
   function bindEvents(
@@ -525,6 +555,45 @@ function listenForServiceWorkerUpdates(onUpdate: (version: string) => void): voi
 }
 
 /**
+ * Fills the "День" filter, which shipped with a single hard-coded option and
+ * could therefore never actually filter anything.
+ */
+function populateDayFilter(): void {
+  const select = document.getElementById('dayFilter') as HTMLSelectElement | null;
+  if (!select || select.options.length > 1) return;
+  for (const day of DAY_ORDER) {
+    const option = document.createElement('option');
+    option.value = day;
+    option.textContent = day;
+    select.appendChild(option);
+  }
+}
+
+/**
+ * Picks up a workbook shared into the PWA from the Android share sheet.
+ *
+ * The Service Worker already parked the file in Cache Storage and the landing
+ * page appended `?shared=1`; the admin dialog is opened with the file staged so
+ * the user only has to enter the PIN and publish.
+ */
+async function adoptSharedWorkbook(
+  adminView: { show(): void; stageFile(file: File): void },
+  toast: { show(message: string, type?: string): void } | undefined
+): Promise<void> {
+  if (!isSharedLaunch()) return;
+  const shared = await takeSharedWorkbook();
+  // Always drop the marker: a reload must not re-open the admin dialog.
+  clearSharedLaunchFlag();
+  if (!shared) {
+    logger.warn('[share] no workbook found in the handoff cache');
+    return;
+  }
+  adminView.stageFile(shared.file);
+  adminView.show();
+  toast?.show(`Файл «${shared.name}» готов к публикации`, 'ok');
+}
+
+/**
  * Register Service Worker for PWA functionality.
  * Required for beforeinstallprompt to fire on Chrome Android.
  */
@@ -545,6 +614,19 @@ function registerServiceWorker(): void {
   }
 }
 
+/**
+ * Install affordance. Must be wired at module scope: `beforeinstallprompt` is
+ * only observable if a listener is present before the browser decides to fire
+ * it, which can happen before the first render finishes.
+ */
+initInstallPrompt({
+  panel: document.getElementById('installPanel'),
+  title: document.getElementById('installPanelTitle'),
+  subtitle: document.getElementById('installPanelSub'),
+  button: document.getElementById('installBtn') as HTMLButtonElement | null,
+  dismiss: document.getElementById('installDismiss') as HTMLButtonElement | null,
+});
+
 // Start the app - register SW independently (runs even if bootstrap fails)
 registerServiceWorker();
 bootstrap().catch((err) => {
@@ -552,39 +634,3 @@ bootstrap().catch((err) => {
   document.body.innerHTML =
     '<div style="padding:2rem;text-align:center">Ошибка инициализации приложения</div>';
 });
-
-/**
- * Handle beforeinstallprompt for PWA install button.
- * Shows the install button when the event fires.
- */
-let deferredPrompt: BeforeInstallPromptEvent | null = null;
-
-window.addEventListener('beforeinstallprompt', (e: Event) => {
-  const promptEvent = e as BeforeInstallPromptEvent;
-  promptEvent.preventDefault();
-  deferredPrompt = promptEvent;
-  const btn = document.getElementById('installBtn');
-  if (btn) btn.classList.remove('hidden');
-});
-
-const installBtn = document.getElementById('installBtn');
-if (installBtn) {
-  installBtn.addEventListener('click', async () => {
-    if (!deferredPrompt) {
-      alert('Откройте меню браузера → Добавить на главный экран');
-      return;
-    }
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      installBtn.classList.add('hidden');
-    }
-    deferredPrompt = null;
-  });
-}
-
-// Type for beforeinstallprompt event
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-}

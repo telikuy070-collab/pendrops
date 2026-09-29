@@ -14,11 +14,15 @@ import { escapeHtml } from '../text.js';
  * @param {Toast} [toast]
  * @param {function(): void} [onPublished] Called after a successful publish so
  *   the host can refresh its own schedule view immediately.
- * @returns {{show: function(): void, close: function(): void, isOpen: function(): boolean}}
+ * @returns {{show: function(): void, close: function(): void, isOpen: function(): boolean,
+ *   stageFile: function(File): void}}
  */
 export function createAdminView(authService, adminService, toast, onPublished) {
   let open = false;
+  /** The file that will be published right now. */
   let pickedFile = null;
+  /** A file handed over by the OS share target. Outlives close(). */
+  let stagedFile = null;
 
   const build = () => {
     const root = document.createElement('div');
@@ -129,6 +133,8 @@ export function createAdminView(authService, adminService, toast, onPublished) {
 
   function setFile(f) {
     pickedFile = f;
+    // An explicit choice supersedes the file that was shared into the app.
+    stagedFile = f;
     fileName.textContent = f.name;
     picked.classList.remove('hidden');
     publish.classList.remove('hidden');
@@ -136,6 +142,7 @@ export function createAdminView(authService, adminService, toast, onPublished) {
   }
   reset.addEventListener('click', () => {
     pickedFile = null;
+    stagedFile = null;
     picked.classList.add('hidden');
     publish.classList.add('hidden');
     file.value = '';
@@ -171,15 +178,27 @@ export function createAdminView(authService, adminService, toast, onPublished) {
     .querySelectorAll('[data-close="admin"]')
     .forEach((el) => el.addEventListener('click', close));
 
+  /**
+   * Prefills the dialog with a workbook the app already has — currently the
+   * file shared into the PWA. The file is only shown once the PIN is accepted,
+   * because it lives inside the hidden drop step.
+   */
+  function stageFile(f) {
+    stagedFile = f;
+  }
+
   function show() {
     root.classList.remove('hidden');
     open = true;
+    if (stagedFile && !pickedFile) setFile(stagedFile);
     setTimeout(() => pin.focus(), 100);
   }
   function close() {
     root.classList.add('hidden');
     open = false;
     pin.value = '';
+    // `stagedFile` is kept on purpose: reopening the admin dialog should still
+    // offer the file the user shared instead of making them pick it again.
     pickedFile = null;
     file.value = '';
     picked.classList.add('hidden');
@@ -194,5 +213,5 @@ export function createAdminView(authService, adminService, toast, onPublished) {
     return open;
   }
 
-  return { show, close, isOpen };
+  return { show, close, isOpen, stageFile };
 }
