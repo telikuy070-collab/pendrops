@@ -4,9 +4,13 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ScheduleData, Lesson, Sheet, Group } from '@core/domain/entities/types';
-import type { IScheduleRepository } from '@core/domain/repositories/ports';
+import type {
+  IScheduleRepository,
+  PublishFileMeta,
+  PublishResult,
+} from '@core/domain/repositories/ports';
 import { getSupabaseClient } from './client';
-import { toAppError } from '@core/domain/errors';
+import { toAppError, ValidationError } from '@core/domain/errors';
 import { withRetry } from '@shared/retry';
 import { logger } from '@shared/logger';
 import { CircuitBreaker } from '@shared/circuitBreaker';
@@ -35,6 +39,29 @@ interface VersionRow {
   updated_at: string;
 }
 
+/** Rows inserted per request. ~1300 lessons => 4 requests. */
+const PUBLISH_CHUNK_SIZE = 400;
+
+/**
+ * Stable uuid v4 for a lesson row.
+ * `crypto.randomUUID` needs a secure context, so insecure origins and old
+ * browsers fall back to a random hex id — the column only requires a uuid.
+ */
+function newRowId(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (c && typeof c.getRandomValues === 'function') {
+    c.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export class SupabaseScheduleRepository implements IScheduleRepository {
   private client: SupabaseClient;
   private realtimeChannel: ReturnType<SupabaseClient['channel']> | null = null;
@@ -51,24 +78,43 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
   }
 
   async loadFull(): Promise<ScheduleData> {
-    return withRetry(async () => {
-      // Load lessons with all related data
-      const { data: lessons, error } = await this.client
-        .from('lessons')
-        .select('*')
-        .order('day_order')
-        .order('time');
+    return withRetry(
+      async () => {
+        // Load lessons with all related data
+        const { data: lessons, error } = await this.client
+          .from('lessons')
+          .select('*')
+          .order('day_order')
+          .order('time');
 
-      if (error) throw toAppError(error);
+        if (error) throw toAppError(error);
 
-      // Load version (maybeSingle — gracefully handle missing row)
-      const { data: versionData } = await this.client
-        .from('schedule_version')
-        .select('version, updated_at')
-        .maybeSingle();
+        // Load version. `limit(1)` + first row instead of `maybeSingle()`:
+        // the result no longer depends on the table holding exactly one row,
+        // so a duplicate can never turn into a PGRST116 failure.
+        const { data: versionRows, error: versionError } = await this.client
+          .from('schedule_version')
+          .select('version, updated_at')
+          .limit(1);
 
-      return this.transformRows(lessons || [], versionData || null);
-    }, { retries: 3, baseDelay: 1000, retryable: (e) => e.message.includes('network') || e.message.includes('timeout') });
+        if (versionError) {
+          logger.warn('[Supabase] Version read failed', {
+            context: 'load_full',
+            code: versionError.code,
+            message: versionError.message,
+          });
+        }
+
+        const versionData = (versionRows?.[0] as VersionRow | undefined) ?? null;
+
+        return this.transformRows(lessons || [], versionData);
+      },
+      {
+        retries: 3,
+        baseDelay: 1000,
+        retryable: (e) => e.message.includes('network') || e.message.includes('timeout'),
+      }
+    );
   }
 
   private transformRows(rows: LessonRow[], versionData: VersionRow | null): ScheduleData {
@@ -178,7 +224,7 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
       if (this.subscribers.size === 0 && this.realtimeChannel) {
         this.client.removeChannel(this.realtimeChannel);
         this.realtimeChannel = null;
-        
+
         // Clean up reconnection timer when no more subscribers
         if (this.reconnectTimer) {
           clearTimeout(this.reconnectTimer);
@@ -190,9 +236,14 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
   }
 
   private setupRealtime(): void {
-    this.realtimeBreaker.execute(() => this.doSetupRealtime())
+    this.realtimeBreaker
+      .execute(() => this.doSetupRealtime())
       .catch((err) => {
-        logger.error('[Supabase] Failed to setup realtime', { context: 'realtime_setup' }, toAppError(err));
+        logger.error(
+          '[Supabase] Failed to setup realtime',
+          { context: 'realtime_setup' },
+          toAppError(err)
+        );
         if (!this.isDestroyed) {
           this.scheduleReconnect();
         }
@@ -228,7 +279,11 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
               logger.info('[Realtime] Subscribed to schedule_changes');
               this.reconnectAttempt = 0;
               resolve();
-            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            } else if (
+              status === 'CHANNEL_ERROR' ||
+              status === 'TIMED_OUT' ||
+              status === 'CLOSED'
+            ) {
               logger.warn('[Realtime] Subscription status', { status });
               reject(new Error(`Realtime subscription failed: ${status}`));
             }
@@ -239,7 +294,11 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
       });
     };
 
-    await withRetry(attemptSubscription, { retries: 5, baseDelay: 2000, retryable: (e) => e.message.includes('Realtime subscription failed') });
+    await withRetry(attemptSubscription, {
+      retries: 5,
+      baseDelay: 2000,
+      retryable: (e) => e.message.includes('Realtime subscription failed'),
+    });
   }
 
   private scheduleReconnect(): void {
@@ -273,7 +332,11 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
           cb(fresh);
         }
       } catch (err) {
-        logger.error('[Supabase] Realtime refresh failed', { context: 'realtime_refresh' }, toAppError(err));
+        logger.error(
+          '[Supabase] Realtime refresh failed',
+          { context: 'realtime_refresh' },
+          toAppError(err)
+        );
       }
     }, 100);
   }
@@ -305,109 +368,201 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
   }
 
   async getVersion(): Promise<{ version: string; updatedAt: string }> {
-    return withRetry(async () => {
-      const { data, error } = await this.client
-        .from('schedule_version')
-        .select('version, updated_at')
-        .maybeSingle();
+    return withRetry(
+      async () => {
+        // First row instead of `maybeSingle()`: the version row is written with an
+        // explicit id=1, and reading it must never fail on a row count mismatch.
+        const { data, error } = await this.client
+          .from('schedule_version')
+          .select('version, updated_at')
+          .limit(1);
 
-      if (error && error.code !== 'PGRST116') throw toAppError(error);
-      if (!data) {
-        // Fallback: return a synthetic version so the app doesn't crash
-        return { version: 'local', updatedAt: new Date().toISOString() };
+        if (error && error.code !== 'PGRST116') throw toAppError(error);
+        if (error) {
+          logger.warn('[Supabase] Version read failed', {
+            context: 'get_version',
+            code: error.code,
+            message: error.message,
+          });
+        }
+
+        const row = (data?.[0] as VersionRow | undefined) ?? null;
+        if (!row) {
+          // Fallback: return a synthetic version so the app doesn't crash
+          return { version: 'local', updatedAt: new Date().toISOString() };
+        }
+        return { version: row.version, updatedAt: row.updated_at };
+      },
+      {
+        retries: 3,
+        baseDelay: 1000,
+        retryable: (e) => e.message.includes('network') || e.message.includes('timeout'),
       }
-      return { version: data.version, updatedAt: data.updated_at };
-    }, { retries: 3, baseDelay: 1000, retryable: (e) => e.message.includes('network') || e.message.includes('timeout') });
+    );
   }
 
   async getChangesSince(version: string): Promise<{ lessons: Lesson[]; version: string }> {
-    return withRetry(async () => {
-      // Get the updated_at timestamp for the given version to use as cursor
-      const { data: versionData, error: versionError } = await this.client
-        .from('schedule_version')
-        .select('updated_at')
-        .eq('version', version)
-        .maybeSingle();
+    return withRetry(
+      async () => {
+        // Get the updated_at timestamp for the given version to use as cursor
+        const { data: versionData, error: versionError } = await this.client
+          .from('schedule_version')
+          .select('updated_at')
+          .eq('version', version)
+          .maybeSingle();
 
-      if (versionError && versionError.code !== 'PGRST116') throw versionError;
+        if (versionError && versionError.code !== 'PGRST116') throw versionError;
 
-      const cursor = versionData?.updated_at || new Date(0).toISOString();
+        const cursor = versionData?.updated_at || new Date(0).toISOString();
 
-      // Fetch lessons updated after the cursor
-      const { data: lessons, error } = await this.client
-        .from('lessons')
-        .select('*')
-        .gt('updated_at', cursor)
-        .order('updated_at');
+        // Fetch lessons updated after the cursor
+        const { data: lessons, error } = await this.client
+          .from('lessons')
+          .select('*')
+          .gt('updated_at', cursor)
+          .order('updated_at');
 
-      if (error) throw toAppError(error);
+        if (error) throw toAppError(error);
 
-      // Get current version
-      const { data: currentVersionData } = await this.client
-        .from('schedule_version')
-        .select('version')
-        .maybeSingle();
+        // Get current version
+        const { data: currentVersionData } = await this.client
+          .from('schedule_version')
+          .select('version')
+          .maybeSingle();
 
-      // Transform rows to Lesson entities
-      const transformedLessons: Lesson[] = (lessons || []).map((row: LessonRow) => ({
-        id: row.id,
-        sheetId: row.sheet_id,
-        day: row.day as Lesson['day'],
-        dayOrder: row.day_order,
-        time: row.time,
-        para: row.para,
-        group: row.group_code,
-        subgroup: row.subgroup || '',
-        subject: row.subject,
-        type: row.type as Lesson['type'],
-        teacher: row.teacher || '',
-        room: row.room || '',
-        isExam: row.is_exam,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      }));
+        // Transform rows to Lesson entities
+        const transformedLessons: Lesson[] = (lessons || []).map((row: LessonRow) => ({
+          id: row.id,
+          sheetId: row.sheet_id,
+          day: row.day as Lesson['day'],
+          dayOrder: row.day_order,
+          time: row.time,
+          para: row.para,
+          group: row.group_code,
+          subgroup: row.subgroup || '',
+          subject: row.subject,
+          type: row.type as Lesson['type'],
+          teacher: row.teacher || '',
+          room: row.room || '',
+          isExam: row.is_exam,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }));
 
-      return {
-        lessons: transformedLessons,
-        version: currentVersionData?.version || version,
-      };
-    }, { retries: 3, baseDelay: 1000, retryable: (e) => e.message.includes('network') || e.message.includes('timeout') });
+        return {
+          lessons: transformedLessons,
+          version: currentVersionData?.version || version,
+        };
+      },
+      {
+        retries: 3,
+        baseDelay: 1000,
+        retryable: (e) => e.message.includes('network') || e.message.includes('timeout'),
+      }
+    );
   }
 
-  async publish(lessons: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[]): Promise<void> {
-    return withRetry(async () => {
-      const version = `v${Date.now()}`;
+  /**
+   * Replace the whole schedule with `lessons`, writing straight to PostgREST.
+   *
+   * Order matters: every new row is inserted **before** the previous rows are
+   * deleted, so the table is never empty and a failure halfway through leaves
+   * the old schedule intact instead of an empty app.
+   *
+   * All new rows share one `updated_at` stamp, and the delete uses a strict
+   * `<`, so freshly inserted rows can never delete themselves.
+   */
+  async publish(
+    lessons: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[],
+    meta: PublishFileMeta = {}
+  ): Promise<PublishResult> {
+    return withRetry(
+      async () => {
+        if (!Array.isArray(lessons) || lessons.length === 0) {
+          throw new ValidationError('В файле не найдено ни одного занятия');
+        }
 
-      // Call Edge Function for secure server-side publishing with service_role
-      const { data, error } = await this.client.functions.invoke('publish-schedule', {
-        body: {
-          lessons: lessons.map(l => ({
-            sheet_id: l.sheetId,
-            day: l.day,
-            day_order: l.dayOrder,
-            time: l.time,
-            para: l.para,
-            group_code: l.group,
-            subgroup: l.subgroup || '',
-            subject: l.subject,
-            type: l.type,
-            teacher: l.teacher || '',
-            room: l.room || '',
-            is_exam: l.isExam,
-          })),
-          version,
-        },
-      });
+        const now = new Date().toISOString();
+        const version = `v${Date.now()}`;
 
-      if (error) throw new Error(error.message || 'Failed to publish schedule');
-      if (data?.error) throw new Error(data.error);
-    }, { retries: 3, baseDelay: 1000, retryable: (e) => e.message.includes('network') || e.message.includes('timeout') });
+        const rows = lessons.map((l) => ({
+          id: newRowId(),
+          sheet_id: l.sheetId,
+          day: l.day,
+          day_order: l.dayOrder,
+          time: l.time,
+          para: l.para,
+          group_code: l.group,
+          subgroup: l.subgroup || '',
+          subject: l.subject,
+          type: l.type,
+          teacher: l.teacher || '',
+          room: l.room || '',
+          is_exam: l.isExam,
+          created_at: now,
+          updated_at: now,
+        }));
+
+        // 1. Insert first — the schedule stays populated the whole time.
+        for (let offset = 0; offset < rows.length; offset += PUBLISH_CHUNK_SIZE) {
+          const chunk = rows.slice(offset, offset + PUBLISH_CHUNK_SIZE);
+          const { error } = await this.client.from('lessons').insert(chunk);
+          if (error) {
+            throw new ValidationError(
+              `Не удалось загрузить расписание в базу (часть ${Math.floor(offset / PUBLISH_CHUNK_SIZE) + 1}): ${error.message}`
+            );
+          }
+        }
+
+        // 2. Only now drop the previous rows. Strict `<` keeps the new ones.
+        const { error: deleteError } = await this.client
+          .from('lessons')
+          .delete()
+          .lt('updated_at', now);
+        if (deleteError) {
+          throw new ValidationError(
+            `Не удалось удалить предыдущее расписание: ${deleteError.message}`
+          );
+        }
+
+        // 3. Single version row, always id=1. An explicit conflict target keeps
+        //    the table at exactly one row, so readers can never hit PGRST116.
+        const { error: versionError } = await this.client.from('schedule_version').upsert(
+          {
+            id: 1,
+            version,
+            updated_at: now,
+            file_name: meta.fileName ?? 'schedule.xls',
+            file_size: meta.fileSize ?? null,
+          },
+          { onConflict: 'id' }
+        );
+        if (versionError) {
+          throw new ValidationError(
+            `Не удалось сохранить версию расписания: ${versionError.message}`
+          );
+        }
+
+        logger.info('[Supabase] Schedule published', { version, count: rows.length });
+
+        return { version, count: rows.length };
+      },
+      {
+        retries: 3,
+        baseDelay: 1000,
+        retryable: (e) => e.message.includes('network') || e.message.includes('timeout'),
+      }
+    );
   }
 
-  async publishFromWorkbook(workbook: {
-    SheetNames: string[];
-    Sheets: Record<string, any>;
-  }): Promise<void> {
+  async publishFromWorkbook(
+    workbook: {
+      SheetNames: string[];
+      Sheets: Record<string, any>;
+    },
+    _xlsx?: any,
+    meta: PublishFileMeta = {}
+  ): Promise<PublishResult> {
     // Reuse existing sheet parser, load xlsx internally
     const { parseWorkbook } = await import('../../sheet');
     const XLSX = await this.loadXLSX();
@@ -451,7 +606,7 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
       }
     }
 
-    await this.publish(lessons);
+    return this.publish(lessons, meta);
   }
 
   private async loadXLSX(): Promise<any> {

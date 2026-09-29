@@ -15,8 +15,9 @@ export function createScheduleView(container: HTMLElement | null): {
 
 export function createAdminView(
   authService: { verifyPin(pin: string): Promise<boolean> },
-  adminService: { publishFromExcel(file: File): Promise<void> },
-  toast?: { show(msg: string, type?: string): void }
+  adminService: { publishFromExcel(file: File): Promise<{ version: string; count: number }> },
+  toast?: { show(msg: string, type?: string): void },
+  onPublished?: () => void
 ): {
   show(): void;
   hide(): void;
@@ -25,7 +26,7 @@ export function createAdminView(
 
 export function initBrandGesture(
   authService: { isAdmin(): boolean; verifyPin(pin: string): Promise<boolean> },
-  adminService: { publishFromExcel(file: File): Promise<void> },
+  adminService: { publishFromExcel(file: File): Promise<{ version: string; count: number }> },
   toast: ReturnType<typeof createToast>
 ): void;
 

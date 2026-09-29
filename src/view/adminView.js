@@ -12,9 +12,11 @@ import { escapeHtml } from '../text.js';
  * @param {AuthService} authService
  * @param {AdminService} adminService
  * @param {Toast} [toast]
+ * @param {function(): void} [onPublished] Called after a successful publish so
+ *   the host can refresh its own schedule view immediately.
  * @returns {{show: function(): void, close: function(): void, isOpen: function(): boolean}}
  */
-export function createAdminView(authService, adminService, toast) {
+export function createAdminView(authService, adminService, toast, onPublished) {
   let open = false;
   let pickedFile = null;
 
@@ -144,12 +146,18 @@ export function createAdminView(authService, adminService, toast) {
     publish.disabled = true;
     status.innerHTML = '⏳ Публикую в Supabase...';
     try {
-      await adminService.publishFromExcel(pickedFile);
-      toast?.show?.('Расписание опубликовано', 'ok');
-      status.innerHTML =
-        '✅ Опубликовано в Supabase!<br><span class="admin-sub">Ученики увидят через 1-2 мин (realtime)</span>';
+      const result = await adminService.publishFromExcel(pickedFile);
+      const count = result && typeof result.count === 'number' ? result.count : 0;
+      toast?.show?.(`Опубликовано: ${count} занятий`, 'ok');
+      status.innerHTML = `✅ Опубликовано: ${count} занятий<br><span class="admin-sub">Ученики увидят новое расписание в течение секунды</span>`;
       publish.classList.add('hidden');
       picked.classList.add('hidden');
+      // The admin's own screen is stale right now — reload it from the source.
+      try {
+        onPublished?.();
+      } catch (err) {
+        console.warn('[Admin] post-publish refresh failed:', err);
+      }
     } catch (err) {
       console.error('[Admin] Publish failed:', err);
       status.textContent = '❌ ' + escapeHtml(err.message || String(err));

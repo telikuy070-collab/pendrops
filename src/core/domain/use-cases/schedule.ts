@@ -72,23 +72,22 @@ export function subscribeScheduleUseCase(
   return repository.subscribe(onUpdate);
 }
 
-/** Check for updates (version comparison) with incremental sync support */
+/**
+ * Check for updates by comparing versions only.
+ *
+ * The check deliberately does NOT call `getChangesSince`: on a version
+ * mismatch its cursor falls back to the epoch, so it downloads the entire
+ * lessons table, the result was always discarded by every caller, and any of
+ * its errors blocked an otherwise valid update. A version comparison is a
+ * single-row SELECT and the caller reloads authoritatively on a match.
+ */
 export async function checkUpdatesUseCase(
   repository: IScheduleRepository,
   currentVersion: string
-): Promise<{ hasUpdate: boolean; version: string; updatedAt: string; changes?: Lesson[] }> {
+): Promise<{ hasUpdate: boolean; version: string; updatedAt: string }> {
   const remote = await repository.getVersion();
-  if (remote.version !== currentVersion) {
-    const changes = await repository.getChangesSince(currentVersion);
-    return {
-      hasUpdate: true,
-      version: remote.version,
-      updatedAt: remote.updatedAt,
-      changes: changes.lessons,
-    };
-  }
   return {
-    hasUpdate: false,
+    hasUpdate: remote.version !== currentVersion,
     version: remote.version,
     updatedAt: remote.updatedAt,
   };

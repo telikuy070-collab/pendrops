@@ -14,6 +14,7 @@ import type {
   IAuthProvider,
   IStorage,
   IFileParser,
+  PublishResult,
 } from '@core/domain/repositories/ports';
 import {
   loadScheduleUseCase,
@@ -126,13 +127,21 @@ export class AdminService {
   ) {}
 
   /** Publish schedule from Excel file */
-  async publishFromExcel(file: ArrayBuffer | File): Promise<void> {
+  async publishFromExcel(file: ArrayBuffer | File): Promise<PublishResult> {
     const workbook = await this.parser.parseExcel(file);
-    await this.repository.publishFromWorkbook(workbook, null);
+    // File name/size are only known when a real File was picked; a raw
+    // ArrayBuffer (tests, workers) publishes without that metadata.
+    const isFile = typeof File !== 'undefined' && file instanceof File;
+    return this.repository.publishFromWorkbook(workbook, null, {
+      fileName: isFile ? file.name : null,
+      fileSize: isFile ? file.size : null,
+    });
   }
 
   /** Publish schedule from parsed lessons */
-  async publishLessons(lessons: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[]): Promise<void> {
-    await this.repository.publish(lessons);
+  async publishLessons(
+    lessons: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[]
+  ): Promise<PublishResult> {
+    return this.repository.publish(lessons);
   }
 }

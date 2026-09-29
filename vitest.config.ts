@@ -12,6 +12,17 @@ export default defineConfig({
     __BUILD_TIMESTAMP__: JSON.stringify(0),
     __BUILD_DATE__: JSON.stringify(''),
   },
+  // Mirrors vite.config.js so tests can import modules that use path aliases
+  // (e.g. src/infrastructure/supabase/repository.ts imports @core and @shared).
+  resolve: {
+    alias: {
+      '@core': resolve(rootDir, 'src/core'),
+      '@infrastructure': resolve(rootDir, 'src/infrastructure'),
+      '@infrastructure/github': resolve(rootDir, 'src/infrastructure/github'),
+      '@presentation': resolve(rootDir, 'src/presentation'),
+      '@shared': resolve(rootDir, 'src/shared'),
+    },
+  },
   test: {
     root: '.',
     include: ['tests/**/*.{test,spec}.?(c|m)[jt]s?(x)'],

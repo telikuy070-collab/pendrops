@@ -3,6 +3,7 @@ import {
   loadCachedScheduleUseCase,
   refreshScheduleUseCase,
   loadScheduleUseCase,
+  checkUpdatesUseCase,
 } from '../src/core/domain/use-cases/schedule.ts';
 
 /** @param {{version?: string, lessons?: number}} options */
@@ -86,5 +87,53 @@ describe('authoritative refresh', () => {
     const storage = makeStorage();
     const repository = { loadFull: vi.fn(async () => fresh) };
     await expect(loadScheduleUseCase(repository, storage)).resolves.toBe(fresh);
+  });
+});
+
+describe('update check', () => {
+  /** Repository double with a version row and a spy on the delta query. */
+  function makeVersionedRepository(version) {
+    return {
+      getVersion: vi.fn(async () => ({ version, updatedAt: '2026-09-18T16:51:37.000Z' })),
+      getChangesSince: vi.fn(async () => ({ lessons: [{ id: 'x' }], version })),
+    };
+  }
+
+  it('reports an update on a version mismatch', async () => {
+    const repository = makeVersionedRepository('v2');
+
+    await expect(checkUpdatesUseCase(repository, 'v1')).resolves.toEqual({
+      hasUpdate: true,
+      version: 'v2',
+      updatedAt: '2026-09-18T16:51:37.000Z',
+    });
+  });
+
+  it('reports no update when the version matches', async () => {
+    const repository = makeVersionedRepository('v1');
+
+    await expect(checkUpdatesUseCase(repository, 'v1')).resolves.toMatchObject({
+      hasUpdate: false,
+      version: 'v1',
+    });
+  });
+
+  it('never downloads the lessons table to answer a version check', async () => {
+    const repository = makeVersionedRepository('v2');
+
+    await checkUpdatesUseCase(repository, 'v1');
+
+    // getChangesSince downloads every row when the cursor is unknown, so a
+    // version check must not touch it at all.
+    expect(repository.getChangesSince).not.toHaveBeenCalled();
+  });
+
+  it('still reports an update when the delta query would have failed', async () => {
+    const repository = makeVersionedRepository('v2');
+    repository.getChangesSince = vi.fn(async () => {
+      throw new Error('delta query failed');
+    });
+
+    await expect(checkUpdatesUseCase(repository, 'v1')).resolves.toMatchObject({ hasUpdate: true });
   });
 });

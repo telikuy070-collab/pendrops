@@ -201,8 +201,12 @@ export async function bootstrap(): Promise<void> {
     const scheduleView = createScheduleView(container);
     scheduleView.start();
 
-    // Create admin view for brand gesture
-    const adminView = createAdminView(authService, adminService, toast);
+    // Create admin view for brand gesture. After a successful publish the
+    // admin's own screen is stale, so it reloads from the same authoritative
+    // path the students use.
+    const adminView = createAdminView(authService, adminService, toast, () =>
+      reloadAuthoritative('publish')
+    );
 
     // Cache pill value elements
     const sheetValue = document.getElementById('sheetValue');
@@ -488,8 +492,10 @@ export async function bootstrap(): Promise<void> {
       }
     });
 
-    // Periodic check every 5 minutes
-    setInterval(() => void check('interval'), 5 * 60 * 1000);
+    // Periodic check every 20 seconds. Each tick is a single-row SELECT on
+    // schedule_version, so a new publish is picked up within seconds — the
+    // realtime channel is only a bonus, not the delivery guarantee.
+    setInterval(() => void check('interval'), 20 * 1000);
   }
 }
 

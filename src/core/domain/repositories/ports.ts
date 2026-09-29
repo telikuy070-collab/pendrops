@@ -5,6 +5,18 @@
 import type { ScheduleData, Lesson, Sheet, Group } from '@core/domain/entities/types';
 import type { PublishLessonV1, PublishReportV1 } from '../../../parser/publishWire.ts';
 
+/** Outcome of a successful publish, reported back to the admin UI. */
+export interface PublishResult {
+  version: string;
+  count: number;
+}
+
+/** Optional source-file metadata recorded alongside the published version. */
+export interface PublishFileMeta {
+  fileName?: string | null;
+  fileSize?: number | null;
+}
+
 export interface IScheduleRepository {
   /** Load complete schedule for offline-first UX */
   loadFull(): Promise<ScheduleData>;
@@ -19,13 +31,17 @@ export interface IScheduleRepository {
   getChangesSince(version: string): Promise<{ lessons: Lesson[]; version: string }>;
 
   /** Admin: publish new schedule (replace all) */
-  publish(lessons: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[]): Promise<void>;
+  publish(
+    lessons: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[],
+    meta?: PublishFileMeta
+  ): Promise<PublishResult>;
 
   /** Admin: publish from parsed Excel workbook */
   publishFromWorkbook(
     workbook: { SheetNames: string[]; Sheets: Record<string, any> },
-    xlsx: any
-  ): Promise<void>;
+    xlsx?: any,
+    meta?: PublishFileMeta
+  ): Promise<PublishResult>;
 }
 
 export interface IAuthProvider {
