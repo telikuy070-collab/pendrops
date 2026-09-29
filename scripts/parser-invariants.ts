@@ -11,6 +11,8 @@
  * fails the gate on its own.
  */
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as XLSX from 'xlsx';
 import { ParserEngine, type ParseSheetResult } from '../src/parser/engine.ts';
 import { buildGrid, cellAt, continuationAnchor, type MergeRangeLike } from '../src/parser/grid.ts';
@@ -329,7 +331,14 @@ export function checkWorkbook(
   };
 }
 
-export function readRealWorkbook(file = 'C:/Users/user/Desktop/pendrops/data/schedule.xls') {
+/**
+ * The tracked schedule, resolved from the repository root so the path works on
+ * every machine and on the CI runner. A hardcoded absolute path makes the
+ * invariant test fail everywhere except the author's laptop.
+ */
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+export function readRealWorkbook(file = resolve(REPO_ROOT, 'data/schedule.xls')) {
   const buffer = readFileSync(file);
   const workbook = XLSX.read(buffer, { type: 'buffer' });
   const raw: Record<string, { rows: unknown[][]; merges: MergeRangeLike[] | null }> = {};
