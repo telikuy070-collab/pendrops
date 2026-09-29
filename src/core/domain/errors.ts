@@ -53,6 +53,28 @@ export class ParseError extends AppError {
   }
 }
 
+/**
+ * The admin stopped a chunked publish between two requests.
+ *
+ * Not a failure and not retryable: the rows the database already accepted stay
+ * there, and the previous schedule was deliberately *not* deleted, so the app
+ * shows the old rows plus whatever the aborted run had already inserted. The
+ * next full publish removes them, because it deletes on a strict `<` cursor and
+ * the leftovers are older than its own timestamp.
+ */
+export class PublishAbortedError extends AppError {
+  constructor(
+    public readonly uploaded: number,
+    public readonly total: number
+  ) {
+    super(
+      'PUBLISH_ABORTED',
+      `Публикация остановлена: загружено ${uploaded} из ${total}. Загруженная часть осталась в базе — опубликуйте файл заново целиком, чтобы убрать её.`,
+      false
+    );
+  }
+}
+
 export class UnknownError extends AppError {
   constructor(message: string, cause?: Error) {
     super('UNKNOWN_ERROR', message, false, cause);

@@ -16,6 +16,7 @@ vi.mock('../src/infrastructure/supabase/client', () => ({
 }));
 
 const { SupabaseScheduleRepository } = await import('../src/infrastructure/supabase/repository.ts');
+const { PublishAbortedError } = await import('../src/core/domain/errors.ts');
 
 /**
  * Builds a query-builder double for one table.
@@ -274,6 +275,69 @@ describe('publish: writes directly to the database', () => {
       // The lessons are already swapped at this point, so the delete is expected.
       expect(calls.some((c) => c.op === 'delete')).toBe(true);
     });
+  });
+});
+
+describe('publish: progress and cancellation', () => {
+  it('reports the chunks as they land, starting from nothing uploaded', async () => {
+    const { repository, calls } = createRepository();
+    const progress = [];
+
+    await repository.publish(makeLessons(1001), {}, { onProgress: (p) => progress.push(p) });
+
+    expect(progress.map((p) => p.uploaded)).toEqual([0, 400, 800, 1001]);
+    expect(progress[0]).toEqual({ uploaded: 0, total: 1001, chunk: 0, chunks: 3, done: false });
+    expect(progress[3]).toEqual({ uploaded: 1001, total: 1001, chunk: 3, chunks: 3, done: true });
+    expect(calls.filter((c) => c.op === 'insert')).toHaveLength(3);
+  });
+
+  it('stops between chunks and leaves the already uploaded rows alone', async () => {
+    const { repository, calls } = createRepository();
+    let checks = 0;
+
+    const error = await repository
+      .publish(makeLessons(1001), {}, { shouldAbort: () => ++checks > 1 })
+      .catch((err) => err);
+
+    expect(error).toBeInstanceOf(PublishAbortedError);
+    expect(error).toMatchObject({ code: 'PUBLISH_ABORTED', uploaded: 400, total: 1001 });
+    expect(error.userMessage).toContain('загружено 400 из 1001');
+    // Only the first chunk landed — and crucially, nothing was deleted and the
+    // version did not advance, so the previous schedule is still the live one.
+    expect(calls.filter((c) => c.op === 'insert')).toHaveLength(1);
+    expect(calls.some((c) => c.op === 'delete')).toBe(false);
+    expect(calls.some((c) => c.op === 'upsert')).toBe(false);
+  });
+
+  it('writes nothing at all when the abort arrives before the first chunk', async () => {
+    const { repository, calls } = createRepository();
+
+    await expect(
+      repository.publish(makeLessons(10), {}, { shouldAbort: () => true })
+    ).rejects.toBeInstanceOf(PublishAbortedError);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('never retries an abort', async () => {
+    const { repository, calls } = createRepository();
+
+    await repository.publish(makeLessons(10), {}, { shouldAbort: () => true }).catch(() => {});
+
+    // One attempt only: an abort is a decision, not a transient failure.
+    expect(calls).toHaveLength(0);
+  });
+
+  it('publishes unchanged when no options are given', async () => {
+    const { repository, calls } = createRepository();
+
+    await repository.publish(makeLessons(3));
+
+    expect(calls.map((c) => `${c.op}:${c.table}`)).toEqual([
+      'insert:lessons',
+      'delete:lessons',
+      'lt:lessons',
+      'upsert:schedule_version',
+    ]);
   });
 });
 

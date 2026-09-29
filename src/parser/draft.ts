@@ -11,6 +11,7 @@
  */
 import type { ParseWorkbookResult, ParsedLesson } from './engine.ts';
 import type { PublishLessonV1, PublishReportV1 } from './publishWire.ts';
+import type { DayName, Lesson, LessonType } from '../core/domain/entities/types';
 
 /** day -> sort index, mirroring `src/constants.js` DAY_ORDER. */
 export const DAY_ORDER_LOOKUP: Readonly<Record<string, number>> = {
@@ -68,4 +69,32 @@ export function toPublishDraft(parsed: ParseWorkbookResult): PublishDraftProject
       ignoredNonLessonCount: parsed.report.ignoredNonLessonCount,
     },
   };
+}
+
+/** A record in the shape `IScheduleRepository.publish` persists. */
+export type PublishableLesson = Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>;
+
+/**
+ * Publishable wire records → the draft the repository writes.
+ *
+ * The other direction of the same contract: `toPublishLesson` decides what a
+ * parse becomes, this decides what that becomes in the database. Empty strings
+ * for the nullable wire fields keep the row identical to what the previous
+ * publish path wrote, so a re-publish of the same file is a no-op for students.
+ */
+export function toPublishableLessons(records: PublishLessonV1[]): PublishableLesson[] {
+  return records.map((record) => ({
+    sheetId: record.sheet_id,
+    day: record.day as DayName,
+    dayOrder: record.day_order,
+    time: record.time,
+    para: record.para,
+    group: record.group_code,
+    subgroup: record.subgroup ?? '',
+    subject: record.subject,
+    type: record.type as LessonType,
+    teacher: record.teacher ?? '',
+    room: record.room ?? '',
+    isExam: record.is_exam,
+  }));
 }

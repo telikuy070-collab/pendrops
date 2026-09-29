@@ -1673,6 +1673,178 @@ body {
   color: var(--muted);
   font-size: 12px;
 }
+.admin-sub-warn {
+  color: #fde68a;
+}
+
+/* Admin preview: what the parse found and how it differs from what is live */
+.admin-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  text-align: left;
+}
+.admin-preview.hidden {
+  display: none;
+}
+.admin-preview-head {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.admin-preview-line {
+  font-size: 12px;
+  color: var(--muted);
+}
+.admin-preview-counters {
+  font-size: 11px;
+  color: var(--soft);
+  line-height: 1.5;
+  word-break: break-word;
+}
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 4px 0;
+}
+.admin-table th {
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--soft);
+  font-weight: 700;
+  padding: 4px 6px 4px 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.admin-table td {
+  padding: 4px 6px 4px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  vertical-align: top;
+}
+.admin-cell-lost {
+  color: #fde68a;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.admin-warning {
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  word-break: break-word;
+}
+.admin-warning-error {
+  background: rgba(248, 113, 113, 0.14);
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #fecaca;
+}
+.admin-warning-warn {
+  background: rgba(253, 224, 71, 0.12);
+  border-color: rgba(253, 224, 71, 0.35);
+  color: #fde68a;
+}
+.admin-warning-info {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.25);
+  color: var(--muted);
+}
+.admin-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-2);
+}
+.admin-diff-head {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.admin-sample {
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 3px 8px;
+  border-left: 2px solid var(--line-2);
+  color: var(--muted);
+  word-break: break-word;
+}
+.admin-sample-out {
+  border-left-color: #f87171;
+}
+.admin-sample-in {
+  border-left-color: #34d399;
+}
+
+/* Publish progress and cancel */
+.admin-running {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.admin-running.hidden {
+  display: none;
+}
+.admin-progress-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.admin-progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line-2);
+  overflow: hidden;
+}
+.admin-progress-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--violet), #a78bfa);
+  transition: width 0.2s ease;
+}
+
+/* Rollback snapshots */
+.admin-snapshots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed var(--line-2);
+  border-radius: 12px;
+  text-align: left;
+}
+.admin-snapshots.hidden {
+  display: none;
+}
+.admin-snapshots-head {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.admin-snapshot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.admin-snapshot-label {
+  min-width: 0;
+}
 
 /* Update banner */
 .update-banner {

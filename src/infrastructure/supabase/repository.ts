@@ -7,10 +7,11 @@ import type { ScheduleData, Lesson, Sheet, Group } from '@core/domain/entities/t
 import type {
   IScheduleRepository,
   PublishFileMeta,
+  PublishOptions,
   PublishResult,
 } from '@core/domain/repositories/ports';
 import { getSupabaseClient } from './client';
-import { toAppError, ValidationError } from '@core/domain/errors';
+import { toAppError, PublishAbortedError, ValidationError } from '@core/domain/errors';
 import { withRetry } from '@shared/retry';
 import { logger } from '@shared/logger';
 import { CircuitBreaker } from '@shared/circuitBreaker';
@@ -471,10 +472,16 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
    *
    * All new rows share one `updated_at` stamp, and the delete uses a strict
    * `<`, so freshly inserted rows can never delete themselves.
+   *
+   * `options` only observes and interrupts: the sequence above is unchanged when
+   * it is absent. An abort is honoured between chunk requests, never inside one,
+   * and it deliberately skips the delete and the version write — see
+   * `PublishAbortedError` for what the database is left holding.
    */
   async publish(
     lessons: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[],
-    meta: PublishFileMeta = {}
+    meta: PublishFileMeta = {},
+    options: PublishOptions = {}
   ): Promise<PublishResult> {
     return withRetry(
       async () => {
@@ -504,7 +511,14 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
         }));
 
         // 1. Insert first — the schedule stays populated the whole time.
-        for (let offset = 0; offset < rows.length; offset += PUBLISH_CHUNK_SIZE) {
+        const total = rows.length;
+        const chunks = Math.ceil(total / PUBLISH_CHUNK_SIZE);
+        let uploaded = 0;
+        options.onProgress?.({ uploaded, total, chunk: 0, chunks, done: false });
+
+        for (let offset = 0; offset < total; offset += PUBLISH_CHUNK_SIZE) {
+          if (options.shouldAbort?.()) throw new PublishAbortedError(uploaded, total);
+
           const chunk = rows.slice(offset, offset + PUBLISH_CHUNK_SIZE);
           const { error } = await this.client.from('lessons').insert(chunk);
           if (error) {
@@ -512,6 +526,15 @@ export class SupabaseScheduleRepository implements IScheduleRepository {
               `Не удалось загрузить расписание в базу (часть ${Math.floor(offset / PUBLISH_CHUNK_SIZE) + 1}): ${error.message}`
             );
           }
+
+          uploaded += chunk.length;
+          options.onProgress?.({
+            uploaded,
+            total,
+            chunk: Math.floor(offset / PUBLISH_CHUNK_SIZE) + 1,
+            chunks,
+            done: uploaded >= total,
+          });
         }
 
         // 2. Only now drop the previous rows. Strict `<` keeps the new ones.

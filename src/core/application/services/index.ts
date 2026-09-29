@@ -14,8 +14,14 @@ import type {
   IAuthProvider,
   IStorage,
   IFileParser,
+  PublishFileMeta,
+  PublishOptions,
   PublishResult,
+  SchedulePreview,
 } from '@core/domain/repositories/ports';
+import type { PublishLessonV1 } from '../../../parser/publishWire.ts';
+import { ValidationError } from '@core/domain/errors';
+import { toPublishableLessons } from '../../../parser/draft.ts';
 import {
   loadScheduleUseCase,
   loadCachedScheduleUseCase,
@@ -121,27 +127,83 @@ export class AuthService {
 }
 
 export class AdminService {
+  /**
+   * The draft of the file the admin last inspected, kept so publishing reuses
+   * the parse the preview showed instead of running the engine a second time.
+   */
+  private pendingPreview: SchedulePreview | null = null;
+
   constructor(
     private repository: IScheduleRepository,
     private parser: IFileParser
   ) {}
 
-  /** Publish schedule from Excel file */
-  async publishFromExcel(file: ArrayBuffer | File): Promise<PublishResult> {
-    const workbook = await this.parser.parseExcel(file);
+  /**
+   * Parse a file once and describe what publishing it would do.
+   *
+   * The returned draft is retained; `publishPreview` writes exactly these
+   * records, so what the admin reviewed is what reaches the database.
+   */
+  async previewFromExcel(file: ArrayBuffer | File): Promise<SchedulePreview> {
+    const preview = await this.parser.previewWorkbook(file);
+    this.pendingPreview = preview;
+    return preview;
+  }
+
+  /** Drops the retained preview, e.g. when the admin resets the dialog. */
+  clearPreview(): void {
+    this.pendingPreview = null;
+  }
+
+  /**
+   * Publish the file the preview was built from.
+   *
+   * Refuses to run without a preview so a file can never reach the database
+   * without having been parsed once, and keeps the retained draft afterwards so
+   * a publish aborted halfway can be restarted without parsing again.
+   */
+  async publishPreview(file: ArrayBuffer | File, options?: PublishOptions): Promise<PublishResult> {
+    const preview = this.pendingPreview;
+    if (!preview) {
+      throw new ValidationError('Файл не разобран: сначала дождитесь предпросмотра');
+    }
+    return this.#write(preview.draft.lessons, file, options);
+  }
+
+  /** Publish schedule from Excel file, parsing it exactly once. */
+  async publishFromExcel(
+    file: ArrayBuffer | File,
+    options?: PublishOptions
+  ): Promise<PublishResult> {
+    const preview = await this.previewFromExcel(file);
+    return this.#write(preview.draft.lessons, file, options);
+  }
+
+  /** Publish schedule from parsed lessons (used by a snapshot rollback). */
+  async publishLessons(
+    lessons: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[],
+    meta?: PublishFileMeta,
+    options?: PublishOptions
+  ): Promise<PublishResult> {
+    return this.repository.publish(lessons, meta, options);
+  }
+
+  /** Hands one parse to the repository; the file only supplies its metadata. */
+  #write(
+    records: PublishLessonV1[],
+    file: ArrayBuffer | File,
+    options?: PublishOptions
+  ): Promise<PublishResult> {
     // File name/size are only known when a real File was picked; a raw
     // ArrayBuffer (tests, workers) publishes without that metadata.
     const isFile = typeof File !== 'undefined' && file instanceof File;
-    return this.repository.publishFromWorkbook(workbook, null, {
-      fileName: isFile ? file.name : null,
-      fileSize: isFile ? file.size : null,
-    });
-  }
-
-  /** Publish schedule from parsed lessons */
-  async publishLessons(
-    lessons: Omit<Lesson, 'id' | 'createdAt' | 'updatedAt'>[]
-  ): Promise<PublishResult> {
-    return this.repository.publish(lessons);
+    return this.repository.publish(
+      toPublishableLessons(records),
+      {
+        fileName: isFile ? file.name : null,
+        fileSize: isFile ? file.size : null,
+      },
+      options
+    );
   }
 }

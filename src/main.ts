@@ -22,6 +22,7 @@ import { createToast } from './view/toast.js';
 import { createScheduleView } from './view/scheduleView.js';
 import { createScheduleStatusBanner } from './view/scheduleStatus.js';
 import { createAdminView } from './view/adminView.js';
+import { createSnapshotStore, createIndexedDbSnapshotBackend } from './admin/snapshots.ts';
 import { initBrandGesture } from '@presentation/gestures/brandGesture';
 import { initInstallPrompt } from '@presentation/pwa/install';
 import {
@@ -213,9 +214,18 @@ export async function bootstrap(): Promise<void> {
 
     // Create admin view for brand gesture. After a successful publish the
     // admin's own screen is stale, so it reloads from the same authoritative
-    // path the students use.
-    const adminView = createAdminView(authService, adminService, toast, () =>
-      reloadAuthoritative('publish')
+    // path the students use. The dialog also gets the schedule this window
+    // already shows (its comparison costs no request) and the on-device
+    // snapshot store the rollback is restored from.
+    const adminView = createAdminView(
+      authService,
+      adminService,
+      toast,
+      () => reloadAuthoritative('publish'),
+      {
+        getCurrentSchedule: () => schedule.value,
+        snapshots: createSnapshotStore(createIndexedDbSnapshotBackend()),
+      }
     );
 
     // Cache pill value elements

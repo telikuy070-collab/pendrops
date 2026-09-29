@@ -5,10 +5,20 @@
  * `parseSchedule` returns a typed draft plus the full parser report, including
  * rejected-record diagnostics. The draft is a candidate, not an authority: the
  * Edge Function re-validates it and refuses to publish while rejects exist.
+ *
+ * `previewWorkbook` runs the very same parse once and returns both the draft
+ * and the report, so the admin can inspect a file before publishing and then
+ * publish exactly what was inspected.
  */
-import type { IFileParser, ScheduleDraft, ParseDiagnostic } from '@core/domain/repositories/ports';
-import { ParserEngine } from '../../parser/engine.ts';
-import { MAX_REPORTED_DIAGNOSTICS, toPublishDraft } from '../../parser/draft.ts';
+import type {
+  IFileParser,
+  ScheduleDraft,
+  SchedulePreview,
+  ParseDiagnostic,
+  ParseSheetPreview,
+} from '@core/domain/repositories/ports';
+import { ParserEngine, type ParseWorkbookResult } from '../../parser/engine.ts';
+import { MAX_REPORTED_DIAGNOSTICS, DAY_ORDER_LOOKUP, toPublishDraft } from '../../parser/draft.ts';
 
 export const PARSER_VERSION = '1.0.0';
 
@@ -38,6 +48,34 @@ export class ExcelFileParser implements IFileParser {
    * decorative rows are expected, rejected candidates are not.
    */
   async parseSchedule(file: ArrayBuffer | File): Promise<ScheduleDraft> {
+    const { draft, diagnostics } = await this.#parseOnce(file);
+    return { ...draft, diagnostics };
+  }
+
+  /** The admin preview: the same single parse, plus its per-sheet report. */
+  async previewWorkbook(file: ArrayBuffer | File): Promise<SchedulePreview> {
+    const { parsed, draft, diagnostics } = await this.#parseOnce(file);
+    const sheets = describeSheets(parsed);
+    return {
+      draft: { ...draft, diagnostics },
+      sheets,
+      days: orderedDays(new Set(sheets.flatMap((sheet) => sheet.days))),
+      report: parsed.report,
+    };
+  }
+
+  /**
+   * The one and only parse of a workbook.
+   *
+   * Both public entry points route through here, so the numbers the admin sees
+   * in the preview and the rows that reach the database can never come from
+   * two different runs of the engine.
+   */
+  async #parseOnce(file: ArrayBuffer | File): Promise<{
+    parsed: ParseWorkbookResult;
+    draft: Omit<ScheduleDraft, 'diagnostics'>;
+    diagnostics: ParseDiagnostic[];
+  }> {
     const XLSX = await this.loadXLSX();
     const workbook = await this.parseExcel(file);
     const parsed = this.engine.parseWorkbookDetailed(workbook, XLSX);
@@ -59,7 +97,7 @@ export class ExcelFileParser implements IFileParser {
     // Shared projection: the offline oracle compares against exactly this shape.
     const { lessons, report } = toPublishDraft(parsed);
 
-    return { lessons, report, diagnostics };
+    return { parsed, draft: { lessons, report }, diagnostics };
   }
 
   private async loadXLSX(): Promise<any> {
@@ -79,4 +117,20 @@ export class ExcelFileParser implements IFileParser {
 
     return this.xlsxPromise;
   }
+}
+
+/** Weekdays holding at least one accepted lesson, in week order. */
+function orderedDays(days: Set<string>): string[] {
+  return Array.from(days).sort(
+    (left, right) => (DAY_ORDER_LOOKUP[left] ?? 99) - (DAY_ORDER_LOOKUP[right] ?? 99)
+  );
+}
+
+function describeSheets(parsed: ParseWorkbookResult): ParseSheetPreview[] {
+  return Object.values(parsed.sheets).map((sheet) => ({
+    sheetName: sheet.sheetName,
+    lessonCount: sheet.stats.acceptedCount,
+    days: orderedDays(new Set(sheet.accepted.map((outcome) => outcome.lesson.day))),
+    stats: sheet.stats,
+  }));
 }
