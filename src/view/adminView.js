@@ -9,11 +9,14 @@
  * @typedef {import('@core/application/services').AuthService} AuthService
  * @typedef {import('@core/application/services').AdminService} AdminService
  * @typedef {import('../admin/snapshots').SnapshotStore} SnapshotStore
+ * @typedef {import('../admin/presence').PresenceService} PresenceService
+ * @typedef {import('../admin/visits').VisitStore} VisitStore
  * @typedef {{show: function(string, string): void}} Toast
  */
 
 import { buildPreviewView, formatCount } from '../admin/preview.ts';
 import { formatSnapshotDate, snapshotFromSchedule } from '../admin/snapshots.ts';
+import { createUserStatsView } from './userStatsView.js';
 
 const PUBLISH_LABEL = '🚀 Опубликовать';
 
@@ -23,16 +26,20 @@ const PUBLISH_LABEL = '🚀 Опубликовать';
  * @param {Toast} [toast]
  * @param {function(): void} [onPublished] Called after a successful publish so
  *   the host can refresh its own schedule view immediately.
- * @param {{getCurrentSchedule?: function(): any, snapshots?: SnapshotStore|null}} [options]
+ * @param {{getCurrentSchedule?: function(): any, snapshots?: SnapshotStore|null,
+ *   presence?: PresenceService|null, visits?: VisitStore|null}} [options]
  *   `getCurrentSchedule` hands over the schedule the app already shows, so the
  *   comparison costs no extra request; `snapshots` is the on-device rollback
- *   point.
+ *   point; `presence` and `visits` back the «Пользователи» block and are only
+ *   touched after the PIN is accepted.
  * @returns {{show: function(): void, close: function(): void, isOpen: function(): boolean,
  *   stageFile: function(File): void}}
  */
 export function createAdminView(authService, adminService, toast, onPublished, options = {}) {
   const getCurrentSchedule = options.getCurrentSchedule || (() => null);
   const snapshots = options.snapshots || null;
+  const presence = options.presence || null;
+  const visits = options.visits || null;
 
   let open = false;
   /** The file that will be published right now. */
@@ -103,6 +110,7 @@ export function createAdminView(authService, adminService, toast, onPublished, o
               <div id="adminSnapshotList"></div>
               <div class="admin-sub" id="adminSnapshotNote"></div>
             </div>
+            <div id="adminUsersHost" class="hidden"></div>
           </div>
         </div>
       </div>
@@ -133,6 +141,17 @@ export function createAdminView(authService, adminService, toast, onPublished, o
   const snapshotBox = root.querySelector('#adminSnapshots');
   const snapshotList = root.querySelector('#adminSnapshotList');
   const snapshotNote = root.querySelector('#adminSnapshotNote');
+  const usersHost = root.querySelector('#adminUsersHost');
+
+  /**
+   * The «Пользователи» block, created only when both services are wired in.
+   *
+   * It stays detached and idle until the PIN is accepted: the presence channel
+   * is opened by `start()` and closed by `stop()`, so students never spend a
+   * connection on a counter only the admin reads.
+   */
+  const userStats = presence && visits ? createUserStatsView({ presence, visits }) : null;
+  if (userStats) usersHost.append(userStats.node);
 
   const showError = (msg) => {
     errEl.textContent = msg;
@@ -189,6 +208,12 @@ export function createAdminView(authService, adminService, toast, onPublished, o
     stepPin.classList.add('hidden');
     stepDrop.classList.remove('hidden');
     setStatus('✅ PIN верен, загрузите файл');
+    // Realtime presence and the period counters are admin-only: from here on the
+    // admin session holds one extra channel until the dialog is closed.
+    if (userStats) {
+      usersHost.classList.remove('hidden');
+      userStats.start();
+    }
     void loadSnapshots();
   });
   pin.addEventListener('keydown', (e) => {
@@ -681,6 +706,12 @@ export function createAdminView(authService, adminService, toast, onPublished, o
     root.classList.add('hidden');
     open = false;
     pin.value = '';
+    // The presence channel exists for the admin session and nowhere else: a
+    // closed dialog must not leave it counting in the background.
+    if (userStats) {
+      userStats.stop();
+      usersHost.classList.add('hidden');
+    }
     // `stagedFile` and `preview` are kept on purpose: reopening the admin
     // dialog should still offer the shared file, with its report already
     // parsed, instead of making the admin pick and re-parse it.

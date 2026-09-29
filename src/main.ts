@@ -48,6 +48,9 @@ import {
 } from '@core/domain/onboarding';
 import { createAdminView } from './view/adminView.js';
 import { createSnapshotStore, createIndexedDbSnapshotBackend } from './admin/snapshots.ts';
+import { createSupabasePresenceService } from './admin/presence.ts';
+import { createSupabaseVisitStore } from './admin/visits.ts';
+import { getDeviceId } from './admin/deviceId.ts';
 import { initBrandGesture } from '@presentation/gestures/brandGesture';
 import { initInstallPrompt } from '@presentation/pwa/install';
 import {
@@ -95,6 +98,14 @@ export async function bootstrap(): Promise<void> {
   const auth = new SupabaseAuthProvider();
   const storage = new HybridStorage();
   const parser = new ExcelFileParser();
+
+  // Anonymous device identity, shared by the admin's presence counter and the
+  // optional `app_visits` table. No personal data, no accounts, no login.
+  const deviceId = getDeviceId();
+  // Both are inert until used: the presence channel opens only inside the admin
+  // dialog, and a visit is only written once the app is already on screen.
+  const presence = createSupabasePresenceService(deviceId);
+  const visits = createSupabaseVisitStore();
 
   // Application Services
   const scheduleService = new ScheduleService(repository, storage);
@@ -293,6 +304,10 @@ export async function bootstrap(): Promise<void> {
     reportError(err, 'Не удалось загрузить расписание');
   } finally {
     actions.setLoading(false);
+    // One anonymous "this device opened the app" row, written after the timetable
+    // is on screen. Fire-and-forget by contract: a missing `app_visits` table, a
+    // refused insert or a dead network must not change anything the student sees.
+    visits.recordVisit(deviceId);
   }
 
   /** Build identity in the settings modal, so bug reports name a real build. */
@@ -335,6 +350,8 @@ export async function bootstrap(): Promise<void> {
       {
         getCurrentSchedule: () => schedule.value,
         snapshots: createSnapshotStore(createIndexedDbSnapshotBackend()),
+        presence,
+        visits,
       }
     );
 

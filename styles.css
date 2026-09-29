@@ -1846,6 +1846,69 @@ body {
   min-width: 0;
 }
 
+/* «Пользователи»: онлайн в реальном времени и устройства за период */
+.admin-users {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed var(--line-2);
+  border-radius: 12px;
+  text-align: left;
+}
+.admin-users-head {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.admin-users-online {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.admin-users-online-value {
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #a7f3d0;
+  font-variant-numeric: tabular-nums;
+}
+.admin-users-online-value.is-unavailable {
+  color: var(--soft);
+}
+.admin-users-online-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.admin-users-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.admin-users-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+.admin-users-row-label {
+  color: var(--muted);
+}
+.admin-users-row-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.admin-users-row-unit {
+  color: var(--soft);
+  font-size: 12px;
+}
+.admin-users-unavailable {
+  font-size: 13px;
+  color: var(--muted);
+}
+
 /* Update banner */
 .update-banner {
   position: sticky;
