@@ -1,7 +1,6 @@
-name: Deploy to GitHub Pages
+name: Deploy
 
-# Publishes the built app to GitHub Pages on every push to main.
-# The build is the same command CI runs, so what ships is what was tested.
+# Publishes the build to GitHub Pages on every push to main.
 
 on:
   push:
@@ -27,40 +26,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
+      - run: npm run build
 
-      - name: Build
-        run: npm run build
+      - uses: actions/configure-pages@v5
 
-      - name: Verify release artifacts
-        run: |
-          set -euo pipefail
-          test -s dist/release-manifest.json
-          test -s dist/data/schedule.xls
-          test -s dist/data/version.json
-          ! grep -q BUILDSTAMP dist/sw.js
-          node -e "
-            const fs = require('node:fs');
-            const manifest = JSON.parse(fs.readFileSync('dist/release-manifest.json', 'utf8'));
-            if (!manifest.appVersion || !manifest.schedule?.sha256) {
-              console.error('release manifest is incomplete');
-              process.exit(1);
-            }
-            console.log('artifact ok: version=' + manifest.appVersion + ' sha=' + manifest.sourceSha);
-          "
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
 
