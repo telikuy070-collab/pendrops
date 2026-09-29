@@ -67,6 +67,10 @@ export function createReminderSettings({
     section.classList.remove('hidden');
 
     if (leadRow) {
+      // The lead time is a real choice only while notifications can actually
+      // fire. Offering "за сколько минут напомнить" to a browser that will
+      // refuse the notification is one more control that does nothing.
+      leadRow.hidden = permission !== 'granted';
       leadRow.innerHTML =
         '<span class="modal-hint">Напомнить за</span>' +
         store
@@ -84,15 +88,20 @@ export function createReminderSettings({
     }
 
     if (status) {
+      // The status line is the only statement about the permission. It must
+      // never read "включены" while the enable button is still on screen: two
+      // opposite claims next to each other is worse than either alone.
       if (permission === 'unsupported') {
         status.textContent = 'Браузер не умеет показывать уведомления.';
       } else if (permission === 'denied') {
-        status.textContent = 'Уведомления запрещены в настройках браузера для этого сайта.';
+        status.textContent =
+          'Уведомления запрещены в настройках браузера для этого сайта — включить их можно только там.';
       } else if (permission === 'default') {
         status.textContent =
-          'Разрешение не запрошено — нажмите, чтобы включить напоминания о парах.';
+          'Разрешение не запрошено — нажми «Включить напоминания», браузер спросит один раз.';
       } else {
-        status.textContent = 'Уведомления включены.';
+        status.textContent =
+          'Уведомления включены. Напомним за выбранное время до пары, пока PenDrops открыт.';
       }
     }
 
@@ -106,7 +115,7 @@ export function createReminderSettings({
     if (list) {
       if (!reminders.length) {
         list.innerHTML =
-          '<div class="find-empty">Напоминаний пока нет. Нажмите «Напомнить» на паре.</div>';
+          '<div class="find-empty">Напоминаний пока нет. Нажми на колокольчик у времени пары.</div>';
       } else {
         list.innerHTML = reminders
           .map(

@@ -8,10 +8,6 @@
   --text: #ffffff;
   --muted: #c4c8e0;
   --soft: #6c7299;
-  --card-bg: #ffffff;
-  --card-text: #1a1530;
-  --card-muted: #6b6b85;
-  --card-border: rgba(255, 255, 255, 0.1);
 
   --violet: #a78bfa;
   --pink: #f0abfc;
@@ -23,22 +19,56 @@
   --indigo: #818cf8;
   --red: #ef4444;
 
-  --c-lecture: linear-gradient(135deg, #818cf8 0%, #c4b5fd 100%);
-  --c-practice: linear-gradient(135deg, #f0abfc 0%, #c4b5fd 100%);
-  --c-lab: linear-gradient(135deg, #6ee7b7 0%, #67e8f9 100%);
-  --c-other: linear-gradient(135deg, #fcd34d 0%, #fda4af 100%);
-  --c-exam: linear-gradient(135deg, #fecaca 0%, #fca5a5 100%);
-
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.5);
   --radius: 18px;
   --radius-sm: 12px;
   --radius-lg: 28px;
+
+  /* --------------------------------------------------------------------------
+     Spacing scale. Every student-facing surface picks its gaps from this scale
+     instead of inventing a value: the previous stylesheet mixed 6, 8, 10, 12,
+     14, 16, 18, 20 and 22 px for what was meant to be the same rhythm, and
+     that is most of why the app read as assembled rather than designed.
+     -------------------------------------------------------------------------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  /* Pills and badges only. */
+  --radius-pill: 999px;
+  /* Wideest the schedule is allowed to grow: a card wider than this starts
+     separating its time from its subject instead of keeping them together. */
+  --content-max: 1120px;
 }
 
 * {
   box-sizing: border-box;
+}
+/* `hidden` is the app's single source of truth for "not on screen", but several
+   components set their own `display` (`.btn.block` is `display: block`), and any
+   class beats the user-agent `[hidden]` rule — which is how the settings modal
+   ended up showing an "enable notifications" button under the words
+   "notifications are on". One global rule closes that whole class of bug. */
+[hidden] {
+  display: none !important;
+}
+
+/* For text that must stay in the accessibility tree but out of the layout —
+   the label of a control that shows its own name. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 html,
 body {
@@ -478,7 +508,7 @@ body {
 
 /* Schedule */
 .schedule {
-  margin: 16px 12px 100px;
+  margin: var(--sp-4) var(--sp-3) 100px;
 }
 
 .day-pills {
@@ -650,12 +680,11 @@ body {
 }
 
 .day {
-  background: #1a1530;
+  background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 24px;
-  margin-bottom: 18px;
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--sp-5);
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   animation: fadeInUp 0.4s ease both;
 }
 @keyframes fadeInUp {
@@ -668,67 +697,68 @@ body {
     transform: translateY(0);
   }
 }
+/* Today is marked by the whole day block — accent border, tinted header — not
+   by a loud badge alone: a badge competes with the cards, which is where the
+   student is actually looking. */
 .day.is-today {
-  border-color: #fcd34d;
-  box-shadow:
-    0 0 0 1px #fcd34d,
-    0 0 40px rgba(252, 211, 77, 0.3),
-    0 8px 32px rgba(0, 0, 0, 0.5);
+  border-color: rgba(167, 139, 250, 0.45);
+  box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.2);
 }
 .day-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(236, 72, 153, 0.25));
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--panel-2);
   border-bottom: 1px solid var(--line);
 }
 .day.is-today .day-header {
-  background: linear-gradient(135deg, rgba(252, 211, 77, 0.3), rgba(253, 164, 175, 0.25));
+  background: rgba(167, 139, 250, 0.16);
 }
 .day-title-block {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-2);
 }
 .day-title {
-  font-size: 19px;
+  font-size: 18px;
   font-weight: 800;
-  letter-spacing: -0.3px;
-  color: #fff;
+  letter-spacing: -0.2px;
 }
 .day-badge {
-  background: linear-gradient(135deg, #fcd34d, #f97316);
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--violet);
   color: #1a0a2e;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
-  padding: 4px 12px;
-  border-radius: 999px;
-  letter-spacing: 1px;
-  box-shadow: 0 4px 16px rgba(252, 211, 77, 0.5);
-  animation: badgePulse 2s ease-in-out infinite;
-}
-@keyframes badgePulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.05);
-  }
+  letter-spacing: 0.8px;
+  white-space: nowrap;
 }
 .day-count {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  color: var(--muted);
   font-weight: 500;
+  white-space: nowrap;
 }
 
+/* One column on a phone, two from a tablet up, and never three: a third column
+   on a wide screen turns every card into a narrow column of broken words, which
+   is the one layout a student cannot read at a glance. */
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 12px;
-  padding: 14px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+}
+@media (min-width: 620px) {
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-4);
+    padding: var(--sp-4);
+  }
 }
 .empty-day {
   color: var(--muted);
@@ -737,342 +767,271 @@ body {
   font-size: 14px;
 }
 
+/* The card is part of the dark app, not a light block pasted into it. A single
+   accent stripe on the left carries the colour; the surface stays the shared
+   panel so a day of cards reads as one screen. */
 .card {
-  background: var(--card-bg);
-  border: 1.5px solid var(--card-border);
-  border-radius: 22px;
-  padding: 18px 18px 16px;
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  position: relative;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  color: var(--card-text);
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4) var(--sp-4) var(--sp-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
   cursor: pointer;
+  overflow: hidden;
+  transition:
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.2s,
+    background 0.2s;
 }
 .card::before {
   content: '';
   position: absolute;
   top: 0;
+  bottom: 0;
   left: 0;
-  right: 0;
-  height: 6px;
-  transition: background 0.3s;
+  width: 3px;
+  background: var(--violet);
+  opacity: 0.5;
 }
 .card::after {
-  content: '';
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.04);
-  opacity: 0.4;
+  content: none;
 }
-.card.tp-lecture {
-  background: linear-gradient(135deg, #ffffff 0%, #f5f3ff 50%, #ede9fe 100%);
-  border-color: rgba(129, 140, 248, 0.4);
-  box-shadow:
-    0 8px 28px rgba(99, 102, 241, 0.2),
-    0 2px 8px rgba(0, 0, 0, 0.3);
-}
-.card.tp-lecture::before {
-  background: linear-gradient(90deg, #818cf8, #a78bfa, #c4b5fd);
-}
-.card.tp-practice {
-  background: linear-gradient(135deg, #ffffff 0%, #fdf2f8 50%, #fce7f3 100%);
-  border-color: rgba(240, 171, 252, 0.4);
-  box-shadow:
-    0 8px 28px rgba(236, 72, 153, 0.2),
-    0 2px 8px rgba(0, 0, 0, 0.3);
-}
-.card.tp-practice::before {
-  background: linear-gradient(90deg, #f0abfc, #f9a8d4, #fda4af);
-}
-.card.tp-lab {
-  background: linear-gradient(135deg, #ffffff 0%, #ecfdf5 50%, #d1fae5 100%);
-  border-color: rgba(110, 231, 183, 0.4);
-  box-shadow:
-    0 8px 28px rgba(16, 185, 129, 0.2),
-    0 2px 8px rgba(0, 0, 0, 0.3);
-}
-.card.tp-lab::before {
-  background: linear-gradient(90deg, #6ee7b7, #67e8f9, #7dd3fc);
-}
-.card.tp-other {
-  background: linear-gradient(135deg, #ffffff 0%, #fffbeb 50%, #fef3c7 100%);
-  border-color: rgba(252, 211, 77, 0.4);
-  box-shadow:
-    0 8px 28px rgba(245, 158, 11, 0.2),
-    0 2px 8px rgba(0, 0, 0, 0.3);
-}
-.card.tp-other::before {
-  background: linear-gradient(90deg, #fcd34d, #fda4af, #f0abfc);
-}
-
 .card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  transform: translateY(-2px);
+  border-color: var(--line-2);
+  background: var(--panel-3);
 }
 .card.is-now {
-  border-color: #10b981;
-  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
-  box-shadow:
-    0 0 0 2px #10b981,
-    0 0 40px rgba(16, 185, 129, 0.5),
-    0 8px 32px rgba(0, 0, 0, 0.4);
-  animation: glow 2s ease-in-out infinite;
+  border-color: rgba(110, 231, 183, 0.5);
+  background: rgba(110, 231, 183, 0.08);
 }
 .card.is-now::before {
-  background: linear-gradient(90deg, #10b981, #14b8a6, #06b6d4);
-  height: 7px;
+  background: var(--emerald);
+  opacity: 1;
 }
-@keyframes glow {
-  0%,
-  100% {
-    box-shadow:
-      0 0 0 2px #10b981,
-      0 0 40px rgba(16, 185, 129, 0.5),
-      0 8px 32px rgba(0, 0, 0, 0.4);
-  }
-  50% {
-    box-shadow:
-      0 0 0 3px #10b981,
-      0 0 60px rgba(16, 185, 129, 0.7),
-      0 8px 32px rgba(0, 0, 0, 0.4);
-  }
-}
+/* The next lesson is pointed at, not decorated: a dotted outline reads as
+   "not yet", which is exactly what it is. */
 .card.is-next {
-  border-color: #8b5cf6;
-  border-style: dashed;
-  box-shadow:
-    0 0 0 1px rgba(139, 92, 246, 0.4),
-    0 8px 24px rgba(0, 0, 0, 0.3);
+  border-color: rgba(167, 139, 250, 0.45);
+}
+.card.is-next::before {
+  opacity: 1;
 }
 .card.is-past {
   opacity: 0.55;
-  filter: saturate(0.4);
 }
-
-/* Экзамен — красная рамка и бейдж */
 .card.is-exam {
-  background: linear-gradient(135deg, #ffffff 0%, #fef2f2 50%, #fee2e2 100%);
-  border-color: rgba(239, 68, 68, 0.5);
-  box-shadow:
-    0 8px 28px rgba(239, 68, 68, 0.2),
-    0 2px 8px rgba(0, 0, 0, 0.3);
+  border-color: rgba(253, 164, 175, 0.45);
 }
 .card.is-exam::before {
-  background: linear-gradient(90deg, #ef4444, #f97316, #ef4444);
-  height: 7px;
+  background: var(--rose);
+  opacity: 0.8;
 }
-.card.is-exam.is-now {
-  box-shadow:
-    0 0 0 2px #ef4444,
-    0 0 50px rgba(239, 68, 68, 0.6),
-    0 8px 32px rgba(0, 0, 0, 0.4);
+/* Legacy class names kept only for the unused src/view/templates/*.html
+   copies. The rendered card is the dark one above. */
+.card.tp-lecture,
+.card.tp-practice,
+.card.tp-lab,
+.card.tp-other {
+  border-color: var(--line);
 }
 
 .exam-badge {
-  background: linear-gradient(135deg, #ef4444, #f97316);
-  color: #fff;
-  font-size: 10px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(253, 164, 175, 0.16);
+  color: var(--rose);
+  font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
-  padding: 4px 10px;
-  border-radius: 999px;
-  letter-spacing: 0.8px;
-  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
+  letter-spacing: 0.6px;
   white-space: nowrap;
 }
 
 /* Live-таймер внутри is-now карточки */
 .card-live {
-  margin-top: 4px;
-  padding-top: 12px;
-  border-top: 1px dashed rgba(16, 185, 129, 0.3);
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 .card-live-bar {
-  height: 6px;
-  border-radius: 3px;
-  background: rgba(16, 185, 129, 0.15);
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: rgba(110, 231, 183, 0.2);
   overflow: hidden;
 }
 .card-live-fill {
   height: 100%;
-  background: linear-gradient(90deg, #10b981, #14b8a6);
   width: 0%;
-  border-radius: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--emerald);
   transition: width 1s linear;
 }
 .card-live-text {
-  font-size: 12px;
-  color: #047857;
-  font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--emerald);
 }
 .card-live-text .countdown {
-  font-weight: 800;
   font-size: 14px;
-  color: #065f46;
+  font-weight: 800;
+  color: var(--emerald);
   font-variant-numeric: tabular-nums;
 }
 
-.card-top {
+/* Time is the answer to "когда", so it is the largest thing on the card and
+   it shares one line with the state pill and the reminder bell — the bell
+   belongs to the time of this lesson, not to the card somewhere below. */
+.card-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: var(--sp-2);
+  min-height: 44px;
+}
+.card-when {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.card-time {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.card-time-end {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.card-flags {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 0 auto;
 }
 .card-tags {
   display: flex;
-  gap: 6px;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  gap: var(--sp-1);
 }
-.time {
+.card-tag {
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--panel-3);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* The lesson type is a quiet label with a colour dot, not a second headline:
+   it tells a student what kind of class it is, and nothing more. */
+.card-tag-type {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-weight: 700;
-  color: #1a1530;
-  background: rgba(0, 0, 0, 0.06);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  width: fit-content;
-  font-variant-numeric: tabular-nums;
+  background: transparent;
+  padding: 0;
+  color: var(--soft);
 }
-.card.is-now .time {
-  background: linear-gradient(135deg, #10b981, #14b8a6);
-  color: #fff;
-  border-color: transparent;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
+.card-tag-type::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--soft);
+}
+.card-tag-type.tp-lecture::before {
+  background: var(--indigo);
+}
+.card-tag-type.tp-practice::before {
+  background: var(--pink);
+}
+.card-tag-type.tp-lab::before {
+  background: var(--emerald);
+}
+.card-tag-type.tp-other::before {
+  background: var(--amber);
+}
+.card-tag-type.tp-exam::before {
+  background: var(--rose);
+}
+.card-tag-exam {
+  background: rgba(253, 164, 175, 0.16);
+  color: var(--rose);
+}
+.card-tag-group {
+  background: transparent;
+  border: 1px solid var(--line-2);
+  color: var(--muted);
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 600;
+}
+.card-subject {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.2px;
+}
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
+  font-size: 13px;
+  color: var(--muted);
+}
+.card-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.card-meta-icon {
+  font-size: 12px;
+  opacity: 0.65;
 }
 
 .state-pill {
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-  padding: 3px 8px;
-  border-radius: 999px;
-  letter-spacing: 0.8px;
-}
-.state-pill.now {
-  background: linear-gradient(135deg, #10b981, #14b8a6);
-  color: #fff;
-  animation: pulse 1.5s ease-in-out infinite;
-}
-@keyframes pulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.05);
-  }
-}
-.state-pill.next {
-  background: rgba(139, 92, 246, 0.15);
-  color: #7c3aed;
-  border: 1px solid rgba(139, 92, 246, 0.3);
-}
-.state-pill.past {
-  background: rgba(0, 0, 0, 0.06);
-  color: #94a3b8;
-}
-
-.card .subject {
-  font-size: 17px;
-  font-weight: 800;
-  line-height: 1.3;
-  margin-top: 4px;
-  letter-spacing: -0.3px;
-  color: #1a1530;
-}
-.card .row-info {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 2px;
-}
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.08);
   padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  color: #6b6b85;
-  font-weight: 500;
-}
-.chip b {
-  color: #1a1530;
-  font-weight: 700;
-}
-.chip.chip-room {
-  background: rgba(125, 211, 252, 0.12);
-  border-color: rgba(125, 211, 252, 0.3);
-  color: #0369a1;
-}
-.chip.chip-room b {
-  color: #0369a1;
-}
-.chip.chip-teacher {
-  background: rgba(252, 211, 77, 0.15);
-  border-color: rgba(252, 211, 77, 0.35);
-  color: #92400e;
-}
-.chip.chip-teacher b {
-  color: #92400e;
-}
-.chip.chip-group {
-  background: rgba(167, 139, 250, 0.12);
-  border-color: rgba(167, 139, 250, 0.3);
-  color: #5b21b6;
-}
-.chip.chip-group b {
-  color: #5b21b6;
-}
-
-.type-pill {
-  font-size: 10px;
-  padding: 4px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
   font-weight: 800;
-  letter-spacing: 1px;
+  letter-spacing: 0.6px;
   text-transform: uppercase;
-  color: #1a0a2e;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   white-space: nowrap;
 }
-.tp-lecture .type-pill {
-  background: var(--c-lecture);
+.state-pill.now {
+  background: rgba(110, 231, 183, 0.18);
+  color: var(--emerald);
 }
-.tp-practice .type-pill {
-  background: var(--c-practice);
+.state-pill.next {
+  background: rgba(167, 139, 250, 0.18);
+  color: var(--violet);
 }
-.tp-lab .type-pill {
-  background: var(--c-lab);
-}
-.tp-other .type-pill {
-  background: var(--c-other);
-}
-.is-exam .type-pill {
-  background: var(--c-exam);
-}
+
+/* The old light card (`.subject`, `.row-info`, `.chip*`, `.type-pill`) is gone:
+   it was the reason the schedule looked like a block from another product, and
+   the markup that used it is not rendered anywhere. See the dead
+   src/view/templates/*.html copies. */
 
 .empty {
   margin: 60px auto;
@@ -1398,97 +1357,17 @@ body {
   font-weight: 700;
 }
 .modal-hint {
-  font-size: 12px;
-  color: var(--muted);
-  margin-top: 8px;
-}
-
-.more-filters {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel);
-  overflow: hidden;
-  margin-top: 8px;
-}
-.more-filters > summary {
-  list-style: none;
-  cursor: pointer;
-  padding: 12px 16px;
   font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  user-select: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: background 0.2s;
-}
-.more-filters > summary::-webkit-details-marker {
-  display: none;
-}
-.more-filters > summary::before {
-  content: '▸';
-  display: inline-block;
-  transition: transform 0.2s;
+  line-height: 1.5;
   color: var(--muted);
-}
-.more-filters[open] > summary::before {
-  transform: rotate(90deg);
-}
-.more-filters > summary:hover {
-  background: var(--panel-2);
-}
-.secondary-row {
-  display: grid;
-  grid-template-columns: 1fr 2fr auto;
-  gap: 10px;
-  padding: 10px 16px 16px;
-  border-top: 1px solid var(--line);
-}
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-.field label {
-  font-size: 11px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  font-weight: 700;
-}
-.field-grow {
-  min-width: 0;
-}
-.field input,
-.field select {
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  color: var(--text);
-  font-size: 14px;
-  outline: none;
-  width: 100%;
-  transition: border-color 0.2s;
-}
-.field input:focus,
-.field select:focus {
-  border-color: var(--violet);
+  margin-top: var(--sp-2);
 }
 
-@media (max-width: 700px) {
-  .secondary-row {
-    grid-template-columns: 1fr 1fr;
-  }
-  .secondary-row .field-grow {
-    grid-column: 1 / -1;
-  }
-  .secondary-row #resetBtn {
-    grid-column: 1 / -1;
-  }
-}
+/* The settings modal no longer carries an "extra filters" disclosure: the day
+   picker moved next to the Day/Week switch and "Clear" next to the search field,
+   because a setting that controls something the student is not looking at is not
+   a setting, it is a second place to get lost. The rules for the removed
+   .more-filters / .secondary-row / .field blocks went with it. */
 
 .picker-list {
   display: flex;
@@ -1982,14 +1861,46 @@ body {
 }
 
 /* --- View toolbar -------------------------------------------------------- */
+/* One row, one visual level: the pills, the switch, the day picker and the
+   changes button are the same height, the same radius and the same weight, so
+   none of them looks more like "the real control" than the others. */
 .qp-tools {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   flex-wrap: wrap;
 }
 .qp-tools[hidden] {
   display: none;
+}
+.qp-daypick {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.qp-daypick[hidden] {
+  display: none;
+}
+.qp-daypick-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--soft);
+}
+.qp-select {
+  min-height: 44px;
+  padding: 8px var(--sp-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.qp-select:focus {
+  outline: none;
+  border-color: var(--violet);
 }
 .tool-btn {
   display: inline-flex;
@@ -1997,7 +1908,7 @@ body {
   gap: 6px;
   min-height: 44px;
   padding: 8px 14px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--text);
@@ -2034,19 +1945,19 @@ body {
   display: inline-flex;
   align-items: center;
   padding: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--line);
   background: var(--panel);
 }
 .seg-btn {
   min-height: 38px;
-  padding: 6px 16px;
+  padding: 6px 18px;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   cursor: pointer;
   touch-action: manipulation;
@@ -2054,7 +1965,7 @@ body {
 }
 .seg-btn.active {
   color: #1a0a2e;
-  background: linear-gradient(135deg, var(--violet), var(--pink));
+  background: var(--violet);
 }
 
 /* --- "Изменения" panel --------------------------------------------------- */
@@ -2131,23 +2042,75 @@ body {
 }
 
 /* --- Search -------------------------------------------------------------- */
+/* A collapsed disclosure, so the timetable starts at the same place every time
+   the app is opened and the secondary function costs one 44px row instead of a
+   label plus a 48px field on every visit. */
 .find-bar {
-  margin: 12px 12px 0;
+  margin: var(--sp-3) var(--sp-3) 0;
+}
+.find-toggle {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 44px;
+  padding: 10px var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  list-style: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
-.find-label {
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 1.2px;
+.find-toggle::-webkit-details-marker {
+  display: none;
+}
+.find-toggle:hover {
+  background: var(--panel-2);
+  border-color: var(--line-2);
+}
+.find-toggle::after {
+  content: '▾';
+  margin-left: auto;
   color: var(--soft);
+  font-size: 12px;
 }
-.find-bar input {
-  min-height: 48px;
-  padding: 12px 16px;
-  border-radius: var(--radius-sm);
+.find-bar[open] .find-toggle::after {
+  content: '▴';
+}
+.find-toggle-icon {
+  font-size: 14px;
+  opacity: 0.8;
+}
+.find-toggle-text {
+  white-space: nowrap;
+}
+.find-toggle-hint {
+  color: var(--soft);
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Named "find-field-row" and not "find-body": the search RESULT rows already use
+   `.find-body` for a vertical subject/meta stack, and one class name for two
+   layouts is how the field ended up stacked and centred. */
+.find-field-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.find-field-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px var(--sp-4);
+  border-radius: var(--radius-pill);
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--text);
@@ -2155,12 +2118,33 @@ body {
   font-size: 15px;
   touch-action: manipulation;
 }
-.find-bar input::placeholder {
+.find-field-row input::placeholder {
   color: var(--soft);
 }
-.find-bar input:focus {
+.find-field-row input:focus {
   outline: none;
   border-color: var(--violet);
+}
+/* The clear action lives next to the field it clears and looks like what it
+   is: a quiet, reversible detail — not a primary button competing with it. */
+.find-clear {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 8px var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.find-clear:hover {
+  color: var(--text);
+  background: var(--panel-2);
 }
 .search-results {
   margin: 10px 12px 0;
@@ -2338,32 +2322,54 @@ body {
 }
 
 /* --- Week list ----------------------------------------------------------- */
+/* Three columns with three different jobs. The time has a fixed width so every
+   subject starts at the same x, the subject takes what is left, and the room and
+   teacher are pushed to the right and dimmed: they are what you look at second,
+   not first. */
+.wk-total {
+  margin: 0 0 var(--sp-3);
+  padding: 0 var(--sp-1);
+  font-size: 13px;
+  color: var(--muted);
+}
+.wk-total b {
+  color: var(--text);
+}
 .wk-day {
-  margin-bottom: 12px;
-  border-radius: var(--radius-sm);
+  margin-bottom: var(--sp-3);
+  border-radius: var(--radius);
   border: 1px solid var(--line);
   background: var(--panel);
   overflow: hidden;
 }
+/* Today is a different block, not a different badge: accent border, tinted
+   header and stronger type. */
 .wk-day.is-today {
-  border-color: rgba(167, 139, 250, 0.5);
+  border-color: rgba(167, 139, 250, 0.45);
+  background: var(--panel-2);
 }
 .wk-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
   background: var(--panel-2);
   border-bottom: 1px solid var(--line);
 }
+.wk-day.is-today .wk-head {
+  background: rgba(167, 139, 250, 0.16);
+}
 .wk-day-name {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 800;
+}
+.wk-day.is-today .wk-day-name {
+  color: var(--violet);
 }
 .wk-badge {
   padding: 2px 8px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, var(--violet), var(--pink));
+  border-radius: var(--radius-pill);
+  background: var(--violet);
   color: #1a0a2e;
   font-size: 10px;
   font-weight: 800;
@@ -2372,9 +2378,10 @@ body {
 }
 .wk-count {
   margin-left: auto;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .wk-rows {
   display: flex;
@@ -2382,10 +2389,11 @@ body {
 }
 .wk-row {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  align-items: baseline;
+  gap: var(--sp-3);
+  width: 100%;
   min-height: 48px;
-  padding: 10px 14px;
+  padding: 10px var(--sp-4);
   border: none;
   background: transparent;
   color: var(--text);
@@ -2403,68 +2411,93 @@ body {
 }
 .wk-time {
   flex: 0 0 auto;
-  min-width: 84px;
-  font-size: 13px;
+  min-width: 92px;
+  font-size: 14px;
   font-weight: 700;
-  color: var(--muted);
   font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.wk-day.is-today .wk-time {
+  color: var(--text);
 }
 .wk-subject {
-  font-size: 14px;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 15px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .wk-meta {
-  font-size: 12px;
+  flex: 0 1 auto;
+  max-width: 40%;
+  font-size: 13px;
   color: var(--soft);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: right;
 }
 .wk-arrow {
   flex: 0 0 auto;
   color: var(--soft);
+  font-size: 13px;
 }
 
 /* --- Reminder button and settings ---------------------------------------- */
+/* An icon in the time row, not a pill below the card: it is one tap to arm, and
+   a labelled button hanging at the bottom read as if it belonged to the next
+   card. */
 .card-remind {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
   min-height: 44px;
-  margin: 10px 14px 14px;
-  padding: 8px 16px;
-  border-radius: 999px;
-  border: 1px solid var(--line-2);
-  background: var(--panel);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 700;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--soft);
+  /* The bell is an emoji, so it cannot be dimmed with `color`: the armed state
+     has to be readable from the container instead of from the glyph. */
+  opacity: 0.6;
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  transition:
+    color 0.2s,
+    border-color 0.2s,
+    background 0.2s,
+    opacity 0.2s;
 }
-.card-remind:hover {
-  background: var(--panel-2);
+.card-remind:hover,
+.card-remind:focus-visible {
+  opacity: 1;
 }
 .card-remind.is-set {
-  border-color: rgba(110, 231, 183, 0.5);
-  color: var(--emerald);
+  opacity: 1;
+  color: var(--amber);
+  border-color: rgba(252, 211, 77, 0.5);
+  background: rgba(252, 211, 77, 0.12);
 }
 .lead-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 10px 0;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0;
+}
+.lead-row[hidden] {
+  display: none;
 }
 .lead-chip {
   min-height: 44px;
   padding: 8px 14px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--muted);
@@ -2477,31 +2510,36 @@ body {
 }
 .lead-chip.active {
   color: #1a0a2e;
-  background: linear-gradient(135deg, var(--violet), var(--pink));
+  background: var(--violet);
   border-color: transparent;
 }
 .reminder-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 10px 0;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0;
 }
 .rem-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 10px;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
   background: var(--panel-2);
 }
 .modal-note {
-  margin: 10px 0 0;
-  font-size: 12px;
-  line-height: 1.45;
+  margin: var(--sp-3) 0 0;
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--soft);
 }
-#reminderEnable.hidden {
-  display: none;
+.modal-note-lead {
+  color: var(--muted);
+  margin-top: 0;
+  margin-bottom: var(--sp-3);
+}
+#reminderEnable {
+  margin-top: var(--sp-3);
 }
 
 /* ==========================================================================
@@ -2567,20 +2605,61 @@ body {
   overscroll-behavior-y: contain;
 }
 
+/* ==========================================================================
+   One content column for the whole app
+   Every student-facing block gets the same measure. Without it the timetable
+   is capped while the header, the search row and the install panel keep
+   stretching to the window edge, and the eye reads the difference as "these
+   belong to different apps". `min()` keeps the 12px gutter on a phone and
+   centres exactly the same width on a wide screen.
+   ========================================================================== */
+.quick-pick,
+.find-bar,
+.search-results,
+.onboarding,
+.install-panel,
+.offline-bar,
+.schedule {
+  width: min(100% - 2 * var(--sp-3), var(--content-max));
+  margin-inline: auto;
+}
+
 @media (max-width: 520px) {
   .qp-tools {
-    gap: 6px;
+    gap: var(--sp-2);
   }
-  .seg-btn {
-    min-height: 40px;
-    padding: 6px 14px;
+  /* On a phone the install prompt is a one-time banner, not a screen: it must
+     not push the timetable it is asking about below the fold. */
+  .install-panel {
+    padding: var(--sp-3);
+    gap: var(--sp-3);
   }
-  .find-bar input {
-    min-height: 44px;
+  .install-panel-icon {
+    font-size: 20px;
+  }
+  .install-panel-head {
+    flex: 1 1 100%;
+    gap: var(--sp-2);
+  }
+  .install-panel-actions {
+    flex: 1 1 100%;
+  }
+  .find-field-row input {
+    /* 16px keeps iOS from zooming the page on focus. */
     font-size: 16px;
   }
+  .find-toggle-hint {
+    display: none;
+  }
   .wk-time {
-    min-width: 68px;
-    font-size: 12px;
+    min-width: 74px;
+    font-size: 13px;
+  }
+  .wk-row {
+    gap: var(--sp-2);
+    padding: 10px var(--sp-3);
+  }
+  .wk-meta {
+    max-width: 34%;
   }
 }

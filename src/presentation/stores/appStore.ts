@@ -413,6 +413,30 @@ export const actions = {
     return patch;
   },
 
+  /**
+   * Forgets every stored group, remembered or merely browsed.
+   *
+   * Used on a shared or borrowed device: the next person must not open the app
+   * and find somebody else's group already selected, and the chooser has to be
+   * reachable again — `onboardingSkipped` is a one-way flag, so it goes back to
+   * `false` here instead of staying "already answered" for good.
+   */
+  forgetSelection() {
+    batch(() => {
+      preferences.value = {
+        ...preferences.value,
+        currentSheetId: '',
+        currentGroup: '',
+        activeSubgroup: '',
+        mySheetId: '',
+        myGroup: '',
+        mySubgroup: '',
+      };
+      currentFilters.value = { ...currentFilters.value, day: '' };
+      onboardingSkipped.value = false;
+    });
+  },
+
   /** Clearing the search must not touch the selected day. */
   clearSearch() {
     batch(() => {

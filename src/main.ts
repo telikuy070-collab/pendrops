@@ -64,6 +64,7 @@ import { effect } from '@presentation/stores/signals';
 import type { PreferencesService as PrefsServiceType } from '@core/application/services';
 import { reportError } from './view/errorBoundary.js';
 import { toAppError } from '@core/domain/errors';
+import type { ConnectivityResult } from '@core/domain/connectivity';
 import { logger } from '@shared/logger';
 import { getBuildDiagnostics, formatBuildDiagnostics } from '@shared/diagnostics';
 import { getSupabaseClient } from '@infrastructure/supabase/client.js';
@@ -205,7 +206,7 @@ export async function bootstrap(): Promise<void> {
       setNetStatus({ loadFailed: true });
       // The banner is shown in every case: with data it explains that the copy
       // on screen may be old, without data it is the only way to retry.
-      banner.show('error', appError.userMessage, {
+      banner.show('error', readableErrorMessage(appError), {
         onRetry: () => void reloadAuthoritative(reason),
         retryLabel: 'Повторить',
       });
@@ -232,6 +233,12 @@ export async function bootstrap(): Promise<void> {
   }
 
   try {
+    // What the browser already knows about the network, before anything is
+    // loaded. `navigator.onLine` false here means the very next load will fail
+    // after its own retry backoff, and waiting for that failure to prove it
+    // leaves the student looking at a spinner with no explanation for seconds.
+    syncInitialNetworkState();
+
     // Load preferences first
     let prefs = await prefsService.load();
     // One-off promotion for installs that predate "my schedule": their current
@@ -274,24 +281,37 @@ export async function bootstrap(): Promise<void> {
     await reloadAuthoritative('bootstrap');
     if (schedule.value) rememberVersion(schedule.value);
 
-    // Subscribe to realtime updates
-    const unsubscribe = scheduleService.subscribe((data) => {
-      // Authoritative-first: apply, then refresh the offline cache.
-      applySchedule(data, 'realtime');
-      setNetStatus({ loadFailed: false });
-      rememberVersion(data);
-      void storage.set('schedule_cache', data).then((cacheUpdated) => {
-        if (cacheUpdated) {
-          cacheWarningShown = false;
-          banner.hide();
-        } else {
-          warnCacheWrite();
-        }
+    // Subscribe to realtime updates.
+    //
+    // Realtime is an enhancement, not the timetable: when it cannot be
+    // established — a phone opening the app with no network is the ordinary
+    // case, not an edge case — the failure must stay local to this block.
+    // Letting it escape aborted the rest of the bootstrap, so a student without
+    // a signal lost the offline notice, the periodic update check AND the
+    // "back online" reload, all of which are exactly what that student needs.
+    try {
+      const unsubscribe = scheduleService.subscribe((data) => {
+        // Authoritative-first: apply, then refresh the offline cache.
+        applySchedule(data, 'realtime');
+        setNetStatus({ loadFailed: false });
+        rememberVersion(data);
+        void storage.set('schedule_cache', data).then((cacheUpdated) => {
+          if (cacheUpdated) {
+            cacheWarningShown = false;
+            banner.hide();
+          } else {
+            warnCacheWrite();
+          }
+        });
       });
-    });
 
-    // Store unsubscribe for cleanup
-    (window as any).__unsubscribeSchedule = unsubscribe;
+      // Store unsubscribe for cleanup
+      (window as any).__unsubscribeSchedule = unsubscribe;
+    } catch (err) {
+      logger.warn('[App] Realtime unavailable, falling back to periodic checks', {
+        error: toAppError(err).code,
+      });
+    }
 
     // Check for updates periodically
     startUpdateChecker(scheduleService);
@@ -310,13 +330,20 @@ export async function bootstrap(): Promise<void> {
     visits.recordVisit(deviceId);
   }
 
-  /** Build identity in the settings modal, so bug reports name a real build. */
+  /**
+   * Build identity in the settings modal, so bug reports name a real build.
+   *
+   * The schedule version is a publication stamp for the student, not a build
+   * number: `v1790717919374` says nothing to them, "обновлено 29.09, 21:38"
+   * says everything. The raw value stays available for bug reports.
+   */
   function renderBuildInfo(data: ScheduleData): void {
     const info = document.getElementById('scheduleInfo');
     const text = document.getElementById('scheduleInfoText');
     if (!info || !text) return;
-    const version = data.version ? ` · расписание ${data.version}` : '';
-    text.textContent = `${formatBuildDiagnostics()}${version}`;
+    const stamp = formatStamp(data.updatedAt);
+    const scheduleLine = stamp ? ` · расписание обновлено ${stamp}` : '';
+    text.textContent = `${formatBuildDiagnostics()}${scheduleLine}`;
     info.hidden = false;
   }
 
@@ -458,7 +485,9 @@ export async function bootstrap(): Promise<void> {
     function scheduleReminderFor(lesson: Lesson): void {
       const result = reminders.add(lesson);
       if (result.ok) {
-        toast?.show(`Напомним за ${result.reminder.leadMinutes} мин до начала`, 'ok');
+        // The browser only fires while the page lives; saying so here saves the
+        // student from waiting for a notification that will never arrive.
+        toast?.show(`Напомним за ${result.reminder.leadMinutes} мин — пока PenDrops открыт`, 'ok');
         return;
       }
       const messages: Record<string, string> = {
@@ -493,6 +522,9 @@ export async function bootstrap(): Promise<void> {
         emptyReason: emptyReason.value,
         canRemind: reminders.canRemind(),
         isReminded: (lesson: Lesson) => reminders.keys().has(lessonKey(lesson)),
+        // Cards must not repeat the selection the header already shows.
+        group: preferences.value.currentGroup,
+        subgroup: preferences.value.activeSubgroup,
       });
     }
 
@@ -538,7 +570,7 @@ export async function bootstrap(): Promise<void> {
 
       // Offline notice: visible only while the data on screen may be stale.
       if (offlineBar) {
-        offlineBar.textContent = state.notice.text;
+        offlineBar.textContent = offlineNoticeText(state.notice, schedule.value?.updatedAt);
         offlineBar.hidden = !state.notice.offline;
       }
 
@@ -548,10 +580,16 @@ export async function bootstrap(): Promise<void> {
         onJump: jumpToDay,
       });
 
-      // Toolbar: only the controls that have something to do.
-      if (viewTools) viewTools.hidden = !state.schedule;
+      // Toolbar: only the controls that have something to do. While the chooser
+      // is up the timetable underneath is hidden, so day and mode controls would
+      // act on something the student cannot see.
+      const chooserUp = state.screen === 'onboarding' && Boolean(state.schedule);
+      if (viewTools) viewTools.hidden = !state.schedule || chooserUp;
       if (myScheduleBtn) myScheduleBtn.hidden = !state.browsing;
-      if (dayFilterEl) dayFilterEl.disabled = state.mode === 'week';
+      // In week mode the day picker would change nothing, so it leaves the
+      // toolbar entirely: a greyed-out control reads as a broken one.
+      const dayPicker = dayFilterEl?.closest('.qp-daypick') as HTMLElement | null;
+      if (dayPicker) dayPicker.hidden = state.mode === 'week';
       if (modeDayBtn && modeWeekBtn) {
         modeDayBtn.classList.toggle('active', state.mode === 'day');
         modeWeekBtn.classList.toggle('active', state.mode === 'week');
@@ -626,6 +664,31 @@ export async function bootstrap(): Promise<void> {
     settingsModal
       ?.querySelector('.modal-backdrop')
       ?.addEventListener('click', () => actions.closeModal());
+
+    // Escape closes whatever modal is open: a mis-tap deserves the same way
+    // back as the ✕ button, otherwise the only exit is guessing.
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !ui.value.activeModal) return;
+      actions.closeModal();
+    });
+
+    // "Забыть мою группу" — the way out on a shared or borrowed device. Without
+    // it the next person opens PenDrops and sees somebody else's group with no
+    // hint that it is not theirs.
+    settingsModal?.querySelector('[data-action="forget"]')?.addEventListener('click', async () => {
+      actions.forgetSelection();
+      await prefsService.save({
+        currentSheetId: '',
+        currentGroup: '',
+        activeSubgroup: '',
+        mySheetId: '',
+        myGroup: '',
+        mySubgroup: '',
+        onboardingSkipped: false,
+      });
+      actions.closeModal();
+      toast?.show('Забыл выбор группы — выберешь заново', 'ok');
+    });
 
     // Sheet picker
     const sheetBtn = document.getElementById('sheetBtn');
@@ -861,6 +924,69 @@ export async function bootstrap(): Promise<void> {
     // schedule_version, so a new publish is picked up within seconds — the
     // realtime channel is only a bonus, not the delivery guarantee.
     setInterval(() => void check('interval'), 20 * 1000);
+  }
+}
+
+/** "29.09, 07:02" в местном часовом поясе; пусто для негодной метки. */
+function formatStamp(iso?: string): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}, ${pad(date.getHours())}:${pad(
+    date.getMinutes()
+  )}`;
+}
+
+/** Сколько часов прошло с метки данных; NaN, если метки нет. */
+function hoursSince(iso?: string): number {
+  if (!iso) return Number.NaN;
+  const at = new Date(iso).getTime();
+  return Number.isNaN(at) ? Number.NaN : (Date.now() - at) / 3_600_000;
+}
+
+/**
+ * Полоса «офлайн».
+ *
+ * Решение «показывать или нет» остаётся за доменом, представление добавляет
+ * только то, на что студент может отреагировать: дату копии и предупреждение,
+ * когда копии больше половины суток. Время без даты на вторые сутки ничего не
+ * значит, а именно на вторые сутки чаще всего и приходят с вопросом.
+ */
+function offlineNoticeText(notice: ConnectivityResult, updatedAt?: string): string {
+  if (!notice.offline) return '';
+  const hours = hoursSince(updatedAt);
+  if (!Number.isFinite(hours) || hours <= 12) return notice.text;
+  const stamp = formatStamp(updatedAt);
+  return stamp
+    ? `${notice.text} · копия от ${stamp}, может быть неактуально`
+    : `${notice.text} · копия может быть неактуальна`;
+}
+
+/**
+ * The text a student reads when a load fails.
+ *
+ * PostgREST rejects with a plain object, and the error taxonomy stringifies it,
+ * so the raw message is the literal "[object Object]". Turning that into a
+ * sentence is the difference between a warning and a bug report.
+ */
+function readableErrorMessage(error: { userMessage?: unknown }): string {
+  const text = typeof error?.userMessage === 'string' ? error.userMessage.trim() : '';
+  if (text && text !== '[object Object]') return text;
+  return 'Не удалось обновить расписание. Показываем сохранённое.';
+}
+
+/**
+ * The state the browser already knows about, recorded before the first load.
+ *
+ * The store starts out claiming "online", which is wrong for a student who
+ * opens the app in a lift with no network: no `offline` event ever fires for a
+ * state that was true before the page existed, so without this the notice would
+ * stay hidden while the timetable silently shows a copy from whenever.
+ */
+function syncInitialNetworkState(): void {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    actions.setNetStatus({ browserOnline: false, loadFailed: true });
   }
 }
 

@@ -69,9 +69,12 @@
       </div>
 
       <!--
-      View tools: back to "my schedule", the День/Неделя switch and the
-      "Изменения" disclosure. All three are hidden until they have something to
-      show, so the toolbar never adds dead controls.
+      View tools: back to "my schedule", the День/Неделя switch, the day picker
+      and the "Изменения" disclosure. All three are hidden until they have
+      something to show, so the toolbar never adds dead controls. The day picker
+      lives here, next to the mode switch, because both answer the same
+      question — "what am I looking at" — and the settings modal used to hold a
+      second, half-working copy of the same choice.
     -->
       <div class="qp-tools" id="viewTools" hidden>
         <button id="myScheduleBtn" class="tool-btn" hidden>← Моё расписание</button>
@@ -83,6 +86,12 @@
             Неделя
           </button>
         </div>
+        <div class="qp-daypick">
+          <label class="qp-daypick-label" for="dayFilter">День</label>
+          <select id="dayFilter" class="qp-select">
+            <option value="">Все</option>
+          </select>
+        </div>
         <button id="changesBtn" class="tool-btn" aria-expanded="false" hidden>
           Изменения <span id="changesCount" class="tool-badge">0</span>
         </button>
@@ -91,18 +100,32 @@
       <div id="changesPanel" class="changes-panel" hidden></div>
     </section>
 
-    <!-- Search is a first-class control: it must be reachable without opening
-         the settings modal, and it never narrows the selected day. -->
-    <div class="find-bar">
-      <label class="find-label" for="searchInput">Где у меня пара</label>
-      <input
-        id="searchInput"
-        type="search"
-        enterkeyhint="search"
-        autocomplete="off"
-        placeholder="Предмет, преподаватель, аудитория..."
-      />
-    </div>
+    <!--
+    Search is a first-class control: it must be reachable without opening the
+    settings modal, and it never narrows the selected day. It is a disclosure
+    rather than a permanent full-width field, because on a phone a 48px input
+    plus its label above the timetable costs a whole screen for a function the
+    student opens a couple of times a week. The summary row is the same height
+    as the other header controls, so nothing is displaced while it is closed.
+  -->
+    <details class="find-bar">
+      <summary class="find-toggle">
+        <span class="find-toggle-icon" aria-hidden="true">🔍</span>
+        <span class="find-toggle-text">Где у меня пара</span>
+        <span class="find-toggle-hint">предмет, аудитория, преподаватель</span>
+      </summary>
+      <div class="find-field-row">
+        <label class="sr-only" for="searchInput">Поиск по расписанию</label>
+        <input
+          id="searchInput"
+          type="search"
+          enterkeyhint="search"
+          autocomplete="off"
+          placeholder="Предмет, преподаватель, аудитория..."
+        />
+        <button type="button" id="resetBtn" class="find-clear">Очистить</button>
+      </div>
+    </details>
     <!-- Hidden state lives in the `hidden` attribute only: `.search-results
          [hidden]` is what the stylesheet keys on, so the class was a second
          spelling of the same thing. -->
@@ -190,26 +213,16 @@
         </div>
 
         <div class="modal-section" id="scheduleInfo" hidden>
-          <h3>Расписание</h3>
+          <h3>О приложении</h3>
           <div class="modal-hint" id="scheduleInfoText">—</div>
         </div>
 
-        <details class="more-filters" id="advancedFilters" open>
-          <summary>Дополнительные фильтры</summary>
-          <div class="secondary-row">
-            <div class="field">
-              <label for="dayFilter">День</label>
-              <select id="dayFilter">
-                <option value="">Все</option>
-              </select>
-            </div>
-            <button id="resetBtn" class="btn ghost">Очистить поиск</button>
-          </div>
-        </details>
-
         <!--
         Reminders. The section states the browser limitation honestly instead of
-        promising a notification that cannot happen once the app is closed.
+        promising a notification that cannot happen once the app is closed, and
+        the enable button exists only while asking the browser can still
+        succeed — a button next to "уведомления включены" is a contradiction the
+        student has to think about instead of a control they can use.
       -->
         <div class="modal-section" id="reminderSettings">
           <h3>Напоминания о паре</h3>
@@ -223,6 +236,25 @@
             Напоминание сработает, пока PenDrops открыт в браузере. После закрытия приложения
             браузер не сможет его показать — это ограничение браузера, а не приложения.
           </p>
+        </div>
+
+        <!--
+        The settings modal deliberately holds nothing that is not a setting:
+        the group lives in the header pills, the day next to the День/Неделя
+        switch, and "Очистить" next to the search field it clears. The one
+        action that belongs here is the reset for a device that is not the
+        student's own — otherwise the next person opens PenDrops and finds
+        somebody else's group already selected.
+      -->
+        <div class="modal-section">
+          <h3>Это устройство</h3>
+          <p class="modal-note modal-note-lead">
+            Группа запоминается в этом браузере. На чужом компьютере забуди её здесь — иначе
+            следующий человек откроет PenDrops и увидит твою группу, ничего не поняв.
+          </p>
+          <button type="button" class="btn ghost block" data-action="forget">
+            Забыть мою группу
+          </button>
         </div>
       </div>
     </div>

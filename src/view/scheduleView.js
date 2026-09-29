@@ -27,13 +27,51 @@ const lessonWord = (n) => {
   return 'пар';
 };
 
+/**
+ * Подпись состояния.
+ *
+ * Возвращается ТОЛЬКО для занятия, которое действительно сейчас идёт или
+ * является следующим: `lessonState()` помечает как «next» каждую будущую пару
+ * дня, поэтому текст по умолчанию раньше печатался на всех карточках сразу и
+ * переставал что-либо значить.
+ */
 const stateLabel = (s) =>
   ({
-    now: { tag: 'now', text: '● Сейчас' },
+    now: { tag: 'now', text: 'Идёт сейчас' },
     next: { tag: 'next', text: 'Дальше' },
-    past: { tag: 'past', text: 'Завершено' },
-    idle: { tag: '', text: '' },
   })[s] || { tag: '', text: '' };
+
+/**
+ * Разделяет «08:00-09:20» на начало и конец.
+ *
+ * Время — главный ответ на вопрос «когда», поэтому начало показывается крупно,
+ * а конец — приглушённо рядом с ним, а не отдельной плашкой.
+ */
+const splitTime = (time) => {
+  const raw = String(time || '').trim();
+  if (!raw) return { start: '', end: '' };
+  const parts = raw
+    .split(/[-–—]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return { start: parts[0] || '', end: parts[1] || '' };
+};
+
+/**
+ * Убирает из предмета кусок, который в него попал из аудитории.
+ *
+ * Исходная ячейка иногда отдаёт «Кыргызстан географиясы №7 корпус 402» вместе
+ * с аудиторией «№7 корпус 402». Правку данных здесь не делаем — это разбирает
+ * парсер, — но показывать одно и то же дважды подряд нельзя.
+ */
+const subjectWithoutRoom = (subject, room) => {
+  const text = String(subject || '');
+  const place = String(room || '').trim();
+  if (place.length < 4) return text;
+  const at = text.toLocaleLowerCase('ru').indexOf(place.toLocaleLowerCase('ru'));
+  if (at < 0) return text;
+  return `${text.slice(0, at)}${text.slice(at + place.length)}`.replace(/[\s,;·|-]+$/, '').trim();
+};
 
 /**
  * Прогресс-бар для текущей пары (0..100).
@@ -63,7 +101,22 @@ const ensureParsed = (lessons) => {
   }
 };
 
-const cardHtml = (lesson, day, idx, highlight, remind) => {
+/**
+ * Карточка одной пары.
+ *
+ * Порядок чтения за две секунды: время → предмет → где. Поэтому время стоит
+ * первой строкой и крупнее всего, предмет — вторым, аудитория и преподаватель
+ * третьим и мелко. Группа показывается только тогда, когда она отличается от
+ * выбранной в шапке: повторять то, что студент и так уже выбрал, — шум.
+ *
+ * @param {any} lesson
+ * @param {string} day
+ * @param {number} idx
+ * @param {{now: number, next: number}} highlight
+ * @param {{enabled: boolean, on: boolean}|null} remind
+ * @param {{group?: string, subgroup?: string}} [selected] выбор из шапки
+ */
+const cardHtml = (lesson, day, idx, highlight, remind, selected = {}) => {
   const tpLabel = TYPE_LABELS[lesson.type] ?? 'Занятие';
   const state = lessonState(lesson);
   const isNow = highlight.now === idx;
@@ -74,56 +127,78 @@ const cardHtml = (lesson, day, idx, highlight, remind) => {
   else if (state === 'past') cls.push('is-past');
   if (lesson.isExam) cls.push('is-exam');
 
+  // Плашка состояния — только для той пары, к которой она относится.
+  const sl = isNow || isNext ? stateLabel(isNow ? 'now' : 'next') : { tag: '', text: '' };
+  const stateBlock = sl.text ? `<span class="state-pill ${sl.tag}">${sl.text}</span>` : '';
+
+  const { start, end } = splitTime(lesson.time);
+  const timeBlock = start
+    ? `<div class="card-when">
+         <span class="card-time">${escapeHtml(start)}</span>
+         ${end ? `<span class="card-time-end">–&nbsp;${escapeHtml(end)}</span>` : ''}
+       </div>`
+    : '';
+
+  const subject = subjectWithoutRoom(lesson.subject || '—', lesson.room);
+
+  // Группа дублирует выбор в шапке, если совпадает и по коду, и по подгруппе.
+  const sameGroup = !selected.group || lesson.group === selected.group;
+  const sameSubgroup =
+    !selected.subgroup || String(lesson.subgroup || '') === String(selected.subgroup);
+  const groupTag =
+    lesson.group && !(sameGroup && sameSubgroup)
+      ? `<span class="card-tag card-tag-group">${escapeHtml(lesson.group)}${
+          lesson.subgroup ? ` (${escapeHtml(lesson.subgroup)})` : ''
+        }</span>`
+      : '';
+
   const meta = [];
-  if (lesson.group)
+  if (lesson.room)
     meta.push(
-      `<span class="chip chip-group"><b>Группа:</b> ${escapeHtml(lesson.group)}${lesson.subgroup ? ` <sup>(${escapeHtml(lesson.subgroup)})</sup>` : ''}</span>`
+      `<span class="card-meta-item"><span class="card-meta-icon" aria-hidden="true">📍</span>${escapeHtml(lesson.room)}</span>`
     );
   if (lesson.teacher)
     meta.push(
-      `<span class="chip chip-teacher"><b>Преподаватель:</b> ${escapeHtml(lesson.teacher)}</span>`
+      `<span class="card-meta-item"><span class="card-meta-icon" aria-hidden="true">👤</span>${escapeHtml(lesson.teacher)}</span>`
     );
-  if (lesson.room)
-    meta.push(`<span class="chip chip-room"><b>Аудитория:</b> ${escapeHtml(lesson.room)}</span>`);
+  const metaBlock = meta.length ? `<div class="card-meta">${meta.join('')}</div>` : '';
 
-  const sl = stateLabel(state);
-  const stateBlock = sl.text ? `<span class="state-pill ${sl.tag}">${sl.text}</span>` : '';
-  const timeBlock = lesson.time ? `<span class="time">🕒 ${escapeHtml(lesson.time)}</span>` : '';
-  const examBadge = lesson.isExam ? `<span class="exam-badge">📝 Экзамен</span>` : '';
+  const examBadge = lesson.isExam ? `<span class="card-tag card-tag-exam">Экзамен</span>` : '';
 
   // Live-таймер и прогресс показываем ТОЛЬКО для is-now карточки
   const liveHtml = isNow
     ? `
     <div class="card-live">
       <div class="card-live-bar"><div class="card-live-fill"></div></div>
-      <div class="card-live-text">Осталось <b class="countdown">—</b></div>
+      <div class="card-live-text">До конца <b class="countdown">—</b></div>
     </div>`
     : '';
 
   // Кнопка напоминания рисуется только когда уведомления реально разрешены:
-  // кнопка, которая ничего не делает, хуже её отсутствия.
+  // кнопка, которая ничего не делает, хуже её отсутствия. Живёт в строке
+  // времени — колокольчик без подписи, привязанный к самому времени пары.
   const remindHtml =
     remind && remind.enabled
-      ? `<button type="button" class="card-remind${remind.on ? ' is-set' : ''}" data-remind-day="${escapeHtml(day)}" data-remind-idx="${idx}">
-        <span class="card-remind-icon" aria-hidden="true">${remind.on ? '🔔✓' : '🔔'}</span>
-        <span>${remind.on ? 'Напомнит' : 'Напомнить'}</span>
+      ? `<button type="button" class="card-remind${remind.on ? ' is-set' : ''}" data-remind-day="${escapeHtml(day)}" data-remind-idx="${idx}" aria-pressed="${remind.on ? 'true' : 'false'}" title="${remind.on ? 'Напоминание включено' : 'Напомнить заранее'}">
+        <span class="card-remind-icon" aria-hidden="true">${remind.on ? '🔔' : '🔕'}</span>
+        <span class="sr-only">${remind.on ? 'Напоминание включено' : 'Напомнить заранее'}</span>
       </button>`
       : '';
 
   return `
     <div class="${cls.join(' ')}" data-day="${escapeHtml(day)}" data-card-idx="${idx}">
-      <div class="card-top">
+      <div class="card-head">
         ${timeBlock}
-        <div class="card-tags">
-          ${examBadge}
-          <span class="type-pill ${lesson.type}">${tpLabel}</span>
-          ${stateBlock}
-        </div>
+        <div class="card-flags">${stateBlock}${remindHtml}</div>
       </div>
-      <div class="subject">${escapeHtml(lesson.subject || '—')}</div>
-      <div class="row-info">${meta.join('')}</div>
+      <div class="card-subject">${escapeHtml(subject)}</div>
+      <div class="card-tags">
+        <span class="card-tag card-tag-type ${lesson.type}">${escapeHtml(tpLabel)}</span>
+        ${examBadge}
+        ${groupTag}
+      </div>
+      ${metaBlock}
       ${liveHtml}
-      ${remindHtml}
     </div>`;
 };
 
@@ -176,8 +251,9 @@ const dayBlockHtml = (day, items, isToday, _today, options = {}) => {
   const hl = highlightIndex(items);
   const status = dayStatus(items);
   const hero = heroHtml(items, status);
+  const selected = { group: options.group || '', subgroup: options.subgroup || '' };
   const cards = items
-    .map((it, i) => cardHtml(it, day, i, hl, options.remind ? options.remind(it) : null))
+    .map((it, i) => cardHtml(it, day, i, hl, options.remind ? options.remind(it) : null, selected))
     .join('');
   return `
     <section class="day ${isToday ? 'is-today' : ''}" data-day="${escapeHtml(day)}" data-status="${status}">
@@ -194,21 +270,31 @@ const dayBlockHtml = (day, items, isToday, _today, options = {}) => {
 };
 
 /**
- * Компактная строка недели: время, предмет, аудитория/преподаватель.
- * Тот же визуальный язык, но в два раза плотнее карточки дня.
+ * Компактная строка недели.
+ *
+ * Три колонки с разными ролями: время фиксированной ширины, предмет — что
+ * студент ищет глазами, метаданные приглушены и прижаты вправо. Раньше всё шло
+ * одной строкой через «·», из-за чего предмет не выделялся, а номер аудитории
+ * дублировался, если он уже был вписан в название предмета.
  */
-const weekRowHtml = (lesson, day) => `
+const weekRowHtml = (lesson, day) => {
+  const subject = subjectWithoutRoom(lesson.subject || '—', lesson.room);
+  const meta = [lesson.room, lesson.teacher].filter(Boolean).join(' · ');
+  return `
   <button type="button" class="wk-row" data-day="${escapeHtml(day)}">
     <span class="wk-time">${escapeHtml(lesson.time || '—')}</span>
-    <span class="wk-body">
-      <span class="wk-subject">${escapeHtml(lesson.subject || '—')}</span>
-      ${[lesson.room, lesson.teacher].filter(Boolean).length ? `<span class="wk-meta">${escapeHtml([lesson.room, lesson.teacher].filter(Boolean).join(' · '))}</span>` : ''}
-    </span>
+    <span class="wk-subject">${escapeHtml(subject)}</span>
+    <span class="wk-meta">${escapeHtml(meta)}</span>
     <span class="wk-arrow" aria-hidden="true">→</span>
   </button>`;
+};
 
-const weekPlanHtml = (plan) =>
-  plan
+const weekPlanHtml = (plan) => {
+  const total = plan.reduce((sum, entry) => sum + entry.count, 0);
+  const summary = total
+    ? `<p class="wk-total">На неделе <b>${total}</b> ${lessonWord(total)}</p>`
+    : '';
+  return `${summary}${plan
     .map(
       (entry) => `
     <section class="wk-day ${entry.isToday ? 'is-today' : ''}" data-day="${escapeHtml(entry.day)}">
@@ -220,7 +306,8 @@ const weekPlanHtml = (plan) =>
       <div class="wk-rows">${entry.items.map((it) => weekRowHtml(it, entry.day)).join('')}</div>
     </section>`
     )
-    .join('');
+    .join('')}`;
+};
 
 const emptyHtml = (title, sub) => `
   <div class="empty">
@@ -243,7 +330,10 @@ const EMPTY_COPY = {
     'Расписание ещё не опубликовано',
     'Как только колледж опубликует новую неделю, она появится здесь сама.',
   ],
-  'no-group': ['Выбери свою группу', 'Один раз — дальше запомним.'],
+  'no-group': [
+    'Выбери свою группу',
+    'Нажми «Группа» сверху — один раз запомним, и дальше сразу откроем твои пары.',
+  ],
   'no-group-lessons': [
     'Для этой группы пока нет пар',
     'Проверь отделение или выбери другую группу — расписание берётся из файла.',
@@ -252,7 +342,7 @@ const EMPTY_COPY = {
     'На этот день пар нет',
     'Посмотри неделю кнопкой «Неделя» или выбери другой день.',
   ],
-  unknown: ['Ничего не найдено', 'Попробуйте изменить фильтры или поисковый запрос.'],
+  unknown: ['Ничего не найдено', 'Проверь выбранную группу или запрос поиска.'],
 };
 
 const emptyFor = (reason) => {
@@ -438,6 +528,8 @@ export function createScheduleView(container) {
    *   emptyReason?: string,
    *   canRemind?: boolean,
    *   isReminded?: (lesson: any) => boolean,
+   *   group?: string,
+   *   subgroup?: string,
    * }} meta
    */
   const render = (lessons, meta) => {
@@ -507,7 +599,13 @@ export function createScheduleView(container) {
       activeDay = today && ordered.includes(today) ? today : ordered[0] || '';
     }
     const dayList = ordered.includes(activeDay) ? ordered : [activeDay, ...ordered].filter(Boolean);
-    const dayOptions = { remind, emptyText: 'На этот день пар нет' };
+    const dayOptions = {
+      remind,
+      emptyText: 'На этот день пар нет',
+      // Карточка не повторяет то, что уже написано в шапке.
+      group: meta.group || '',
+      subgroup: meta.subgroup || '',
+    };
 
     if (!isMobile) {
       container.innerHTML = dayBlockHtml(
